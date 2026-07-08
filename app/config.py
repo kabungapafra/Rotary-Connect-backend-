@@ -14,3 +14,8 @@ if DATABASE_URL.startswith("postgres://"):
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
+
+# Bootstrap system-admin account, created on first startup if missing.
+# Override both in production.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@rotary.org")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")

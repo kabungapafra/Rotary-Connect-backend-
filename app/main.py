@@ -12,7 +12,7 @@ from .routers import (
     checkin,
     club_members,
 )
-from .seed import seed_demo_data
+from .seed import seed_bootstrap_data
 
 app = FastAPI(title="Rotary Connect API")
 
@@ -40,7 +40,7 @@ def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo TEXT"))
-    seed_demo_data()
+    seed_bootstrap_data()
 
 
 @app.get("/health")
