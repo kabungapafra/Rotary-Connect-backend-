@@ -202,10 +202,18 @@ class ProjectCreate(BaseModel):
     deadline: str = ""
 
 
+class MeetingAttendee(BaseModel):
+    name: str
+    role: str
+    time: str
+
+
 class MeetingOut(BaseModel):
     date: str
     name: str
     checkin_count: int
+    attended: bool  # whether the requesting member checked in
+    attendees: list[MeetingAttendee]
 
 
 class MemberSummaryOut(BaseModel):

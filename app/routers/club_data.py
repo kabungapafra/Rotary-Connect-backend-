@@ -179,10 +179,26 @@ def list_meetings(
     )
     out = []
     for m in meetings:
-        count = db.query(models.CheckIn).filter(models.CheckIn.meeting_id == m.id).count()
+        rows = (
+            db.query(models.CheckIn)
+            .filter(models.CheckIn.meeting_id == m.id)
+            .order_by(models.CheckIn.checked_in_at)
+            .all()
+        )
         out.append(
             schemas.MeetingOut(
-                date=m.date.strftime("%d %b %Y"), name=m.name, checkin_count=count
+                date=m.date.strftime("%d %b %Y"),
+                name=m.name,
+                checkin_count=len(rows),
+                attended=any(r.member_id == member.id for r in rows),
+                attendees=[
+                    schemas.MeetingAttendee(
+                        name=r.member.name,
+                        role=r.member.role,
+                        time=r.checked_in_at.strftime("%H:%M"),
+                    )
+                    for r in rows
+                ],
             )
         )
     return out
