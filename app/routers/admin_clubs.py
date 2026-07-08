@@ -127,6 +127,35 @@ def record_payment(club_id: int, payload: schemas.PaymentRecord, db: Session = D
     return _to_out(club)
 
 
+@router.delete("/{club_id}")
+def delete_club(club_id: int, db: Session = Depends(get_db)):
+    """Remove a club and everything belonging to it (members, meetings,
+    check-ins, events, projects)."""
+    club = _get_or_404(db, club_id)
+    meeting_ids = [
+        m.id for m in db.query(models.Meeting).filter(models.Meeting.club_id == club_id)
+    ]
+    if meeting_ids:
+        db.query(models.CheckIn).filter(models.CheckIn.meeting_id.in_(meeting_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(models.Meeting).filter(models.Meeting.id.in_(meeting_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(models.Member).filter(models.Member.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Event).filter(models.Event.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Project).filter(models.Project.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.delete(club)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.get("/{club_id}/stats", response_model=schemas.ClubStatsOut)
 def club_stats(club_id: int, db: Session = Depends(get_db)):
     club = _get_or_404(db, club_id)

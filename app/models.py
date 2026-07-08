@@ -104,6 +104,37 @@ class Meeting(Base):
     check_ins: Mapped[list["CheckIn"]] = relationship(back_populates="meeting")
 
 
+class Event(Base):
+    """A club's recurring weekly event (the app's Events calendar works by
+    day-of-week, e.g. 'WED')."""
+
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    dow: Mapped[str] = mapped_column(String(3), default="WED")
+    name: Mapped[str] = mapped_column(String(160))
+    meta: Mapped[str] = mapped_column(String(240), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    name: Mapped[str] = mapped_column(String(160))
+    area: Mapped[str] = mapped_column(String(120), default="")
+    pct: Mapped[int] = mapped_column(Integer, default=0)
+    desc: Mapped[str] = mapped_column(String(500), default="")
+    deadline: Mapped[str] = mapped_column(String(40), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class CheckIn(Base):
     __tablename__ = "check_ins"
     __table_args__ = (

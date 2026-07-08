@@ -10,6 +10,7 @@ from .routers import (
     admin_members,
     auth,
     checkin,
+    club_data,
     club_members,
 )
 from .seed import seed_bootstrap_data
@@ -26,6 +27,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(checkin.router)
 app.include_router(club_members.router)
+app.include_router(club_data.router)
 app.include_router(admin_auth.router)
 app.include_router(admin_clubs.router)
 app.include_router(admin_members.router)

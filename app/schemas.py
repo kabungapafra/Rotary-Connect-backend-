@@ -166,6 +166,56 @@ class PaymentLegendItem(BaseModel):
     color_key: str
 
 
+# ── club events & projects (read: any member; write: president) ────────
+
+class EventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    dow: str
+    name: str
+    meta: str
+
+
+class EventCreate(BaseModel):
+    dow: str = "WED"
+    name: str
+    meta: str = ""
+
+
+class ProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    area: str
+    pct: int
+    desc: str
+    deadline: str
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    area: str = ""
+    pct: int = 0
+    desc: str = ""
+    deadline: str = ""
+
+
+class MeetingOut(BaseModel):
+    date: str
+    name: str
+    checkin_count: int
+
+
+class MemberSummaryOut(BaseModel):
+    check_in_count: int
+    meetings_total: int
+    attendance_percent: int
+    today_meeting_name: str
+    member_count: int
+
+
 # ── club-level member management (Club President only) ─────────────────
 
 class ClubMemberCreate(BaseModel):
@@ -195,6 +245,8 @@ class AnalyticsOut(BaseModel):
     active_members: int
     new_clubs_this_month: int
     avg_attendance_percent: int
+    meetings_today: int
+    checkins_today: int
     mrr_formatted: str
     payment_legend: list[PaymentLegendItem]
     attendance_labels: list[str]

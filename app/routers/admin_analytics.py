@@ -79,6 +79,10 @@ def analytics(db: Session = Depends(get_db)):
         round(sum(attendance_values) / len(attendance_values)) if attendance_values else 0
     )
 
+    todays_meetings = [m for m in meetings if m.date == today]
+    meetings_today = len(todays_meetings)
+    checkins_today = sum(checkins_per_meeting.get(m.id, 0) for m in todays_meetings)
+
     return schemas.AnalyticsOut(
         total_clubs=total_clubs,
         active_clubs=active_clubs,
@@ -86,6 +90,8 @@ def analytics(db: Session = Depends(get_db)):
         active_members=active_members,
         new_clubs_this_month=new_clubs_this_month,
         avg_attendance_percent=avg_attendance_percent,
+        meetings_today=meetings_today,
+        checkins_today=checkins_today,
         mrr_formatted=mrr_formatted,
         payment_legend=payment_legend,
         attendance_labels=attendance_labels,
