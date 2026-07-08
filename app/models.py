@@ -16,6 +16,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class AppMeta(Base):
+    """Tiny key/value store for one-time migration flags."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), default="")
+
+
 class Club(Base):
     __tablename__ = "clubs"
 

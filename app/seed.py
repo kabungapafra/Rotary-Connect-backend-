@@ -23,11 +23,22 @@ _LEGACY_DEMO_CLUBS = [
 ]
 
 
+_PURGE_FLAG = "legacy_demo_purged"
+
+
 def _purge_legacy_demo_data(db) -> None:
+    # One-time only: the demo names include real club names (e.g. "Rotary
+    # Club of Mbalwa"), so re-running on later startups would delete real
+    # production data recreated under the same name.
+    if db.get(models.AppMeta, _PURGE_FLAG) is not None:
+        return
+    db.add(models.AppMeta(key=_PURGE_FLAG, value="1"))
+
     clubs = (
         db.query(models.Club).filter(models.Club.name.in_(_LEGACY_DEMO_CLUBS)).all()
     )
     if not clubs:
+        db.commit()
         return
     club_ids = [c.id for c in clubs]
     meeting_ids = [
