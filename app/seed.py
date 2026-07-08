@@ -116,16 +116,19 @@ def seed_demo_data() -> None:
             clubs_by_name[club.name] = club
         db.commit()
 
-        exists = db.query(models.Member).filter(models.Member.phone == DEMO_PHONE).first()
-        if not exists:
+        # The demo member doubles as Mbalwa's Club President so the demo
+        # login can exercise the president-only member-management flows.
+        # Promote-in-place keeps already-deployed databases consistent.
+        demo = db.query(models.Member).filter(models.Member.phone == DEMO_PHONE).first()
+        if demo is None:
             default_club = clubs_by_name[DEFAULT_CLUB_NAME]
             db.add(
                 models.Member(
                     club_id=default_club.id,
                     member_number=DEMO_MEMBER_NUMBER,
                     name="Demo Member",
-                    role="Member",
-                    is_board=False,
+                    role="Club President",
+                    is_board=True,
                     status="active",
                     email="",
                     phone=DEMO_PHONE,
@@ -133,6 +136,10 @@ def seed_demo_data() -> None:
                     pin_hash=security.hash_pin(DEMO_PIN),
                 )
             )
+            db.commit()
+        elif demo.role != "Club President":
+            demo.role = "Club President"
+            demo.is_board = True
             db.commit()
 
         for i, (name, phone, club_name, status) in enumerate(_DEMO_MEMBERS, start=2):

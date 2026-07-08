@@ -16,6 +16,7 @@ class MemberOut(BaseModel):
     name: str
     role: str
     is_board: bool
+    status: str = "active"
     email: str
     phone: str
     dob: str
@@ -25,6 +26,10 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     member: MemberOut
+    # Branding for the member's club, so the app can show the right club
+    # name/logo without a second request.
+    club_name: str
+    club_logo: str | None = None
 
 
 class CheckInMemberOut(BaseModel):
@@ -81,6 +86,7 @@ class ClubOut(BaseModel):
     next_due_date: str | None
     payment_status: str
     joined: str
+    logo: str | None = None
 
 
 class ClubCreate(BaseModel):
@@ -91,6 +97,23 @@ class ClubCreate(BaseModel):
     fee_amount: int = 0
     first_payment_date: str | None = None
     next_due_date: str | None = None
+    logo: str | None = None
+    # The club's first administrator (the Club President), created by the
+    # system admin together with the club itself.
+    president_name: str = ""
+    president_email: str = ""
+    president_phone: str = ""
+
+
+class PresidentCredentials(BaseModel):
+    name: str
+    member_number: str
+    pin: str
+
+
+class ClubCreateResponse(BaseModel):
+    club: ClubOut
+    president: PresidentCredentials | None = None
 
 
 class ClubStatusUpdate(BaseModel):
@@ -141,6 +164,28 @@ class PaymentLegendItem(BaseModel):
     name: str
     count: int
     color_key: str
+
+
+# ── club-level member management (Club President only) ─────────────────
+
+class ClubMemberCreate(BaseModel):
+    name: str
+    role: str = "Member"
+    email: str = ""
+    phone: str
+    dob: str = ""
+    is_board: bool = False
+
+
+class ClubMemberUpdate(BaseModel):
+    role: str | None = None
+    is_board: bool | None = None
+    status: str | None = None  # active | suspended
+
+
+class ClubMemberCreateResponse(BaseModel):
+    member: MemberOut
+    pin: str
 
 
 class AnalyticsOut(BaseModel):

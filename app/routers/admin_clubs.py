@@ -3,10 +3,16 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
-from ..utils import compute_payment_status, format_display_date, parse_display_date
+from ..utils import (
+    compute_payment_status,
+    format_display_date,
+    generate_member_number,
+    generate_pin,
+    parse_display_date,
+)
 
 router = APIRouter(
     prefix="/admin/clubs", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -26,6 +32,7 @@ def _to_out(club: models.Club) -> schemas.ClubOut:
         next_due_date=format_display_date(club.next_due_date),
         payment_status=compute_payment_status(club.next_due_date),
         joined=club.created_at.strftime("%d %b %Y"),
+        logo=club.logo,
     )
 
 
@@ -42,8 +49,17 @@ def list_clubs(db: Session = Depends(get_db)):
     return [_to_out(c) for c in clubs]
 
 
-@router.post("", response_model=schemas.ClubOut)
+@router.post("", response_model=schemas.ClubCreateResponse)
 def create_club(payload: schemas.ClubCreate, db: Session = Depends(get_db)):
+    president_phone = payload.president_phone.strip()
+    if president_phone and db.query(models.Member).filter(
+        models.Member.phone == president_phone
+    ).first():
+        raise HTTPException(
+            status_code=422,
+            detail="A member with the president's phone number already exists",
+        )
+
     club = models.Club(
         name=payload.name.strip() or "Untitled Club",
         district=payload.district.strip() or "—",
@@ -53,11 +69,37 @@ def create_club(payload: schemas.ClubCreate, db: Session = Depends(get_db)):
         fee_amount=payload.fee_amount or 0,
         last_paid_date=parse_display_date(payload.first_payment_date),
         next_due_date=parse_display_date(payload.next_due_date),
+        logo=payload.logo,
     )
     db.add(club)
+    db.flush()
+
+    # The club's first administrator: only this Club President account can
+    # add and manage the club's other administrators and members.
+    president_out = None
+    if payload.president_name.strip() and president_phone:
+        pin = generate_pin()
+        president = models.Member(
+            club_id=club.id,
+            member_number=generate_member_number(db),
+            name=payload.president_name.strip(),
+            role="Club President",
+            is_board=True,
+            status="active",
+            email=payload.president_email.strip(),
+            phone=president_phone,
+            dob="",
+            pin_hash=security.hash_pin(pin),
+        )
+        db.add(president)
+        db.flush()
+        president_out = schemas.PresidentCredentials(
+            name=president.name, member_number=president.member_number, pin=pin
+        )
+
     db.commit()
     db.refresh(club)
-    return _to_out(club)
+    return schemas.ClubCreateResponse(club=_to_out(club), president=president_out)
 
 
 @router.patch("/{club_id}/status", response_model=schemas.ClubOut)

@@ -1,6 +1,28 @@
+import random
+
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from . import models
+
 DATE_FORMAT = "%d %b %Y"  # e.g. "12 Aug 2026" — matches the dashboard's own display format
+
+
+def generate_member_number(db: Session) -> str:
+    """Next free RCM-XXXX member number (seeded numbers count up from 0001)."""
+    max_id = db.query(func.max(models.Member.id)).scalar() or 0
+    candidate = max_id + 1
+    while db.query(models.Member).filter(
+        models.Member.member_number == f"RCM-{candidate:04d}"
+    ).first():
+        candidate += 1
+    return f"RCM-{candidate:04d}"
+
+
+def generate_pin() -> str:
+    return f"{random.randint(0, 9999):04d}"
 
 
 def parse_display_date(value: str | None) -> date | None:

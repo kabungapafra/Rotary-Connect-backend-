@@ -16,4 +16,9 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid member number/phone or PIN",
         )
     token = security.create_access_token(member.id)
-    return schemas.LoginResponse(access_token=token, member=member)
+    return schemas.LoginResponse(
+        access_token=token,
+        member=member,
+        club_name=member.club.name,
+        club_logo=member.club.logo,
+    )
