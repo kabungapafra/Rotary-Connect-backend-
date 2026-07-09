@@ -176,6 +176,10 @@ class GuestVisit(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Set once the thank-you SMS has gone out (2 hours after check-in, once
+    # the fellowship itself is over) — makes the periodic sweep idempotent,
+    # same pattern as Member.last_birthday_wished.
+    thanked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     club: Mapped["Club"] = relationship()
 

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import SessionLocal, get_db
+from ..event_announcements import schedule_event_announcement, unschedule_event_announcement
 from ..security import get_current_member
 from ..sms import send_bulk_sms
 from .club_members import PRESIDENT_ROLE
@@ -76,10 +77,11 @@ def create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
-    # New fellowship announced — tell the whole club by SMS. Only on
-    # create, not on every edit, so editing an event's time doesn't
-    # re-blast everyone.
-    background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
+    # Schedule the recurring "4 hours before" reminder. If the TIME &
+    # VENUE text has no parseable clock time, we can't compute that — fall
+    # back to one immediate announcement so the club still hears about it.
+    if not schedule_event_announcement(event):
+        background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
     return event
 
 
@@ -99,6 +101,8 @@ def update_event(
     event.meta = payload.meta.strip()
     db.commit()
     db.refresh(event)
+    # Day/time may have changed — reschedule the recurring reminder.
+    schedule_event_announcement(event)
     return event
 
 
@@ -112,6 +116,7 @@ def delete_event(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
+    unschedule_event_announcement(event.id)
     db.delete(event)
     db.commit()
     return {"deleted": True}

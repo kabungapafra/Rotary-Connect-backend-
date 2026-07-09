@@ -11,7 +11,7 @@ from ..birthdays import wish_if_due
 from ..database import get_db
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
-from ..sms import normalize_ugandan_phone, send_sms
+from ..sms import normalize_ugandan_phone
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 
@@ -85,7 +85,6 @@ def check_in(
 @router.post("/guest", response_model=schemas.GuestCheckInResponse)
 def guest_check_in(
     payload: schemas.GuestCheckInRequest,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
 ):
@@ -93,7 +92,9 @@ def guest_check_in(
     registered by whoever is holding the phone) without any member being
     logged in — including a member of a *different* club, visiting this
     one. Scoped to a real club so the thank-you message names the right
-    club and can't be abused to spam arbitrary text."""
+    club and can't be abused to spam arbitrary text. The thank-you SMS
+    itself is sent later by the periodic sweep in thank_you.py, 2 hours
+    after this check-in, not from here."""
     client_ip = request.client.host if request.client else "unknown"
     if not _guest_rate_limit_ok(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
@@ -147,13 +148,6 @@ def guest_check_in(
     )
     db.add(visit)
     db.commit()
-
-    background_tasks.add_task(
-        send_sms,
-        phone,
-        f"Thank you for visiting {club.name} today, {name.split()[0]}! "
-        f"We hope to welcome you again soon. — {club.name}",
-    )
     return schemas.GuestCheckInResponse(ok=True, club_name=club.name)
 
 
