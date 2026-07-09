@@ -47,7 +47,9 @@ def find_member_by_identifier(db: Session, identifier: str) -> models.Member | N
 
 
 def create_access_token(member_id: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=config.JWT_EXPIRE_MINUTES)
+    # Members stay signed in on their device until they uninstall the app,
+    # so member tokens are long-lived; admin tokens keep the short expiry.
+    expire = datetime.now(timezone.utc) + timedelta(days=365)
     payload = {"sub": str(member_id), "exp": expire}
     return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
 
