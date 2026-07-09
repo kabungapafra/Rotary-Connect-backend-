@@ -10,3 +10,4 @@ apscheduler
 qrcode[pil]
 python-multipart
 boto3
+pytest

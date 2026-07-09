@@ -55,7 +55,6 @@ def analytics(db: Session = Depends(get_db)):
     club_member_counts = {c.id: (c.members_count or 1) for c in clubs}
 
     meetings = db.query(models.Meeting).all()
-    meeting_by_id = {m.id: m for m in meetings}
     checkins_per_meeting: dict[int, int] = defaultdict(int)
     for ci in db.query(models.CheckIn).all():
         checkins_per_meeting[ci.meeting_id] += 1
