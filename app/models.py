@@ -78,6 +78,10 @@ class Member(Base):
     phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     dob: Mapped[str] = mapped_column(String(20), default="")
     pin_hash: Mapped[str] = mapped_column(String(255))
+    # Date the member last received a birthday SMS — makes the birthday
+    # check idempotent so it's safe to run from multiple trigger points
+    # (daily sweep, login, check-in) without double-sending.
+    last_birthday_wished: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -150,3 +154,27 @@ class CheckIn(Base):
 
     member: Mapped["Member"] = relationship(back_populates="check_ins")
     meeting: Mapped["Meeting"] = relationship(back_populates="check_ins")
+
+
+class GuestVisit(Base):
+    """A walk-in guest's self-registration at a club — logged both so the
+    club has a visitor record and so the thank-you SMS can't be re-sent to
+    the same number for the same club more than once a day."""
+
+    __tablename__ = "guest_visits"
+    __table_args__ = (
+        UniqueConstraint("club_id", "phone", "visit_date", name="uq_guest_club_phone_day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str] = mapped_column(String(20))
+    host_name: Mapped[str] = mapped_column(String(120), default="")
+    guest_type: Mapped[str] = mapped_column(String(40), default="")
+    visit_date: Mapped[date] = mapped_column(Date, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    club: Mapped["Club"] = relationship()

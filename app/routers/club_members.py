@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_member
+from ..sms import send_sms
 from ..utils import generate_member_number, generate_pin
 
 router = APIRouter(prefix="/club/members", tags=["club"])
@@ -37,6 +38,7 @@ def list_members(
 @router.post("", response_model=schemas.ClubMemberCreateResponse)
 def add_member(
     payload: schemas.ClubMemberCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
@@ -66,6 +68,13 @@ def add_member(
     db.add(new_member)
     db.commit()
     db.refresh(new_member)
+    background_tasks.add_task(
+        send_sms,
+        phone,
+        f"Welcome to {member.club.name}! Your Rotary Connect login: "
+        f"Member No. {new_member.member_number}, PIN {pin}. "
+        f"Download the app and sign in to get started.",
+    )
     return schemas.ClubMemberCreateResponse(member=new_member, pin=pin)
 
 

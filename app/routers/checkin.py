@@ -1,16 +1,36 @@
+import time
+from collections import defaultdict
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..birthdays import wish_if_due
 from ..database import get_db
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
+from ..sms import normalize_ugandan_phone, send_sms
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 
 DEFAULT_MEETING_NAME = "Weekly Fellowship Meeting"
+
+# Per-IP throttle for the unauthenticated guest endpoint — the per-phone
+# daily dedup below stops repeat SMS to one number, this stops someone from
+# working through many club_ids against a single victim number. In-memory
+# is fine: single free-tier instance, and the window is short.
+_GUEST_WINDOW_SECONDS = 600
+_GUEST_MAX_PER_WINDOW = 5
+_guest_request_log: dict[str, list[float]] = defaultdict(list)
+
+
+def _guest_rate_limit_ok(client_ip: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _guest_request_log[client_ip] if now - t < _GUEST_WINDOW_SECONDS]
+    recent.append(now)
+    _guest_request_log[client_ip] = recent
+    return len(recent) <= _GUEST_MAX_PER_WINDOW
 
 
 def _get_or_create_todays_meeting(db: Session, club_id: int) -> models.Meeting:
@@ -30,6 +50,7 @@ def _get_or_create_todays_meeting(db: Session, club_id: int) -> models.Meeting:
 
 @router.post("", response_model=schemas.CheckInResponse)
 def check_in(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
@@ -50,11 +71,74 @@ def check_in(
     db.add(row)
     db.commit()
     db.refresh(row)
+    # Same opportunistic birthday check as login — whichever the member
+    # hits first today triggers it.
+    background_tasks.add_task(wish_if_due, db, member)
     return schemas.CheckInResponse(
         already_checked_in=False,
         checked_in_at=row.checked_in_at,
         meeting_name=meeting.name,
     )
+
+
+@router.post("/guest", response_model=schemas.GuestCheckInResponse)
+def guest_check_in(
+    payload: schemas.GuestCheckInRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Unauthenticated: a walk-in guest registers themselves (or is
+    registered by whoever is holding the phone) without any member being
+    logged in. Scoped to a real club_id so the thank-you message names the
+    right club and can't be abused to spam arbitrary text."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _guest_rate_limit_ok(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
+
+    club = db.get(models.Club, payload.club_id)
+    if club is None:
+        raise HTTPException(status_code=404, detail="Club not found")
+    name = payload.name.strip()[:120]
+    if not name:
+        raise HTTPException(status_code=422, detail="Guest name is required")
+    phone = normalize_ugandan_phone(payload.phone)
+    if phone is None:
+        raise HTTPException(status_code=422, detail="Enter a valid phone number")
+
+    today = date.today()
+    already = (
+        db.query(models.GuestVisit)
+        .filter(
+            models.GuestVisit.club_id == club.id,
+            models.GuestVisit.phone == phone,
+            models.GuestVisit.visit_date == today,
+        )
+        .first()
+    )
+    if already:
+        # Already logged (and thanked) today — idempotent no-op rather than
+        # an error, so a retried request from a flaky connection is safe.
+        return schemas.GuestCheckInResponse(ok=True)
+
+    visit = models.GuestVisit(
+        club_id=club.id,
+        name=name,
+        phone=phone,
+        host_name=payload.host_name.strip()[:120],
+        guest_type=payload.guest_type.strip()[:40],
+        visit_date=today,
+    )
+    db.add(visit)
+    db.commit()
+
+    background_tasks.add_task(
+        send_sms,
+        phone,
+        f"Thank you for visiting {club.name} today, {name.split()[0]}! "
+        f"We hope to welcome you again soon. — {club.name}",
+    )
+    return schemas.GuestCheckInResponse(ok=True)
 
 
 @router.get("/today", response_model=schemas.TodayResponse)

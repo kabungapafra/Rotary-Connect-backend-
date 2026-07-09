@@ -19,3 +19,9 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 # Override both in production.
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@rotary.org")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+# Yoola SMS gateway. Sending is skipped (not errored) when no key is
+# configured, so local dev never needs a live account.
+YOOLA_API_KEY = os.getenv("YOOLA_API_KEY", "")
+YOOLA_API_URL = os.getenv("YOOLA_API_URL", "https://yoolasms.com/api/v1/send")
+SMS_ENABLED = bool(YOOLA_API_KEY)

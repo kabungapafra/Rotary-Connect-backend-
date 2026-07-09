@@ -1,11 +1,12 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
+from ..sms import send_sms
 from ..utils import (
     compute_payment_status,
     format_display_date,
@@ -50,7 +51,9 @@ def list_clubs(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=schemas.ClubCreateResponse)
-def create_club(payload: schemas.ClubCreate, db: Session = Depends(get_db)):
+def create_club(
+    payload: schemas.ClubCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     president_phone = payload.president_phone.strip()
     if president_phone and db.query(models.Member).filter(
         models.Member.phone == president_phone
@@ -96,6 +99,13 @@ def create_club(payload: schemas.ClubCreate, db: Session = Depends(get_db)):
         president_out = schemas.PresidentCredentials(
             name=president.name, member_number=president.member_number, pin=pin
         )
+        background_tasks.add_task(
+            send_sms,
+            president_phone,
+            f"Welcome to Rotary Connect! You're the Club President for {club.name}. "
+            f"Your login: Member No. {president.member_number}, PIN {pin}. "
+            f"Download the app and sign in to get started.",
+        )
 
     db.commit()
     db.refresh(club)
@@ -130,7 +140,7 @@ def record_payment(club_id: int, payload: schemas.PaymentRecord, db: Session = D
 @router.delete("/{club_id}")
 def delete_club(club_id: int, db: Session = Depends(get_db)):
     """Remove a club and everything belonging to it (members, meetings,
-    check-ins, events, projects)."""
+    check-ins, events, projects, guest visits)."""
     club = _get_or_404(db, club_id)
     meeting_ids = [
         m.id for m in db.query(models.Meeting).filter(models.Meeting.club_id == club_id)
@@ -142,6 +152,9 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
         db.query(models.Meeting).filter(models.Meeting.id.in_(meeting_ids)).delete(
             synchronize_session=False
         )
+    db.query(models.GuestVisit).filter(models.GuestVisit.club_id == club_id).delete(
+        synchronize_session=False
+    )
     db.query(models.Member).filter(models.Member.club_id == club_id).delete(
         synchronize_session=False
     )

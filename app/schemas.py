@@ -27,9 +27,23 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     member: MemberOut
     # Branding for the member's club, so the app can show the right club
-    # name/logo without a second request.
+    # name/logo without a second request. club_id lets the device register
+    # guest visits for this club without needing to be logged in itself.
+    club_id: int
     club_name: str
     club_logo: str | None = None
+
+
+class GuestCheckInRequest(BaseModel):
+    club_id: int
+    name: str
+    phone: str
+    host_name: str = ""
+    guest_type: str = ""
+
+
+class GuestCheckInResponse(BaseModel):
+    ok: bool
 
 
 class CheckInMemberOut(BaseModel):
