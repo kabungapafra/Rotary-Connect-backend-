@@ -54,3 +54,17 @@ def upload_photos(
     for row in rows:
         db.refresh(row)
     return rows
+
+
+@router.delete("/{photo_id}")
+def delete_photo(
+    photo_id: int,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    photo = db.get(models.GalleryPhoto, photo_id)
+    if photo is None or photo.club_id != member.club_id:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    db.delete(photo)
+    db.commit()
+    return {"deleted": True}
