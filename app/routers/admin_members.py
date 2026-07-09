@@ -1,11 +1,12 @@
 import random
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
+from ..sms import send_sms
 
 router = APIRouter(
     prefix="/admin/members", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -66,11 +67,17 @@ def set_member_status(
 
 
 @router.post("/{member_id}/reset-password", response_model=schemas.ResetPasswordResponse)
-def reset_password(member_id: int, db: Session = Depends(get_db)):
+def reset_password(member_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     member = _get_or_404(db, member_id)
     new_pin = f"{random.randint(0, 9999):04d}"
     member.pin_hash = security.hash_pin(new_pin)
     db.commit()
+    background_tasks.add_task(
+        send_sms,
+        member.phone,
+        f"Your Rotary Connect PIN has been reset. Member No. {member.member_number}, "
+        f"new PIN {new_pin}. Sign in with these to continue.",
+    )
     return schemas.ResetPasswordResponse(member_name=member.name, new_pin=new_pin)
 
 
