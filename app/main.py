@@ -29,9 +29,15 @@ logger = logging.getLogger("rotary.main")
 
 app = FastAPI(title="Rotary Connect API")
 
+# The mobile app is a native HTTP client, not a browser, so CORS never
+# applies to it either way. The only real browser caller is the admin
+# dashboard — this used to be allow_origins=["*"], which let any website
+# call an API that hands out bearer tokens and stores member phone
+# numbers from a visitor's own browser session.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://rotary.digiflecttech.dev"],
+    allow_origin_regex=r"http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
