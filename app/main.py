@@ -12,6 +12,7 @@ from .routers import (
     admin_auth,
     admin_clubs,
     admin_members,
+    admin_sms,
     auth,
     checkin,
     club_data,
@@ -38,6 +39,7 @@ app.include_router(admin_auth.router)
 app.include_router(admin_clubs.router)
 app.include_router(admin_members.router)
 app.include_router(admin_analytics.router)
+app.include_router(admin_sms.router)
 
 
 def _run_birthday_sweep_job() -> None:
