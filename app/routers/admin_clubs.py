@@ -102,8 +102,8 @@ def create_club(
         background_tasks.add_task(
             send_sms,
             president_phone,
-            f"Welcome to Rotary Connect! You're the Club President for {club.name}. "
-            f"Your login: Member No. {president.member_number}, PIN {pin}. "
+            f"Welcome aboard Rotary Connect, President - {club.name}. "
+            f"Your login: Member No. {president.member_number} or your phone number, PIN {pin}. "
             f"Download the app and sign in to get started.",
         )
 
