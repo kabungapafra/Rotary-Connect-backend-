@@ -35,7 +35,13 @@ class LoginResponse(BaseModel):
 
 
 class GuestCheckInRequest(BaseModel):
-    club_id: int
+    # Exactly one of these identifies the club being visited: club_id for
+    # the common case (the device is already branded for that club — e.g.
+    # a front-desk device, or a first-time guest before any login),
+    # club_name for a logged-in member visiting a *different* club than
+    # their own, who has to name it themselves.
+    club_id: int | None = None
+    club_name: str | None = None
     name: str
     phone: str
     host_name: str = ""
@@ -44,6 +50,7 @@ class GuestCheckInRequest(BaseModel):
 
 class GuestCheckInResponse(BaseModel):
     ok: bool
+    club_name: str
 
 
 class CheckInMemberOut(BaseModel):

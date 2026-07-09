@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -90,13 +91,28 @@ def guest_check_in(
 ):
     """Unauthenticated: a walk-in guest registers themselves (or is
     registered by whoever is holding the phone) without any member being
-    logged in. Scoped to a real club_id so the thank-you message names the
-    right club and can't be abused to spam arbitrary text."""
+    logged in — including a member of a *different* club, visiting this
+    one. Scoped to a real club so the thank-you message names the right
+    club and can't be abused to spam arbitrary text."""
     client_ip = request.client.host if request.client else "unknown"
     if not _guest_rate_limit_ok(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
 
-    club = db.get(models.Club, payload.club_id)
+    club: models.Club | None = None
+    if payload.club_id is not None:
+        club = db.get(models.Club, payload.club_id)
+    elif payload.club_name is not None and payload.club_name.strip():
+        query_name = payload.club_name.strip()
+        club = (
+            db.query(models.Club)
+            .filter(func.lower(models.Club.name) == query_name.lower())
+            .first()
+        )
+        if club is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f'No club found named "{query_name}" — check the spelling.',
+            )
     if club is None:
         raise HTTPException(status_code=404, detail="Club not found")
     name = payload.name.strip()[:120]
@@ -119,7 +135,7 @@ def guest_check_in(
     if already:
         # Already logged (and thanked) today — idempotent no-op rather than
         # an error, so a retried request from a flaky connection is safe.
-        return schemas.GuestCheckInResponse(ok=True)
+        return schemas.GuestCheckInResponse(ok=True, club_name=club.name)
 
     visit = models.GuestVisit(
         club_id=club.id,
@@ -138,7 +154,7 @@ def guest_check_in(
         f"Thank you for visiting {club.name} today, {name.split()[0]}! "
         f"We hope to welcome you again soon. — {club.name}",
     )
-    return schemas.GuestCheckInResponse(ok=True)
+    return schemas.GuestCheckInResponse(ok=True, club_name=club.name)
 
 
 @router.get("/today", response_model=schemas.TodayResponse)
