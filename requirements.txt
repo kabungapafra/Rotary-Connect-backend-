@@ -9,3 +9,4 @@ requests
 apscheduler
 qrcode[pil]
 python-multipart
+boto3

@@ -1,16 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import config, models, schemas, storage
 from ..database import get_db
 from ..security import get_current_member
 
 router = APIRouter(prefix="/club/gallery", tags=["gallery"])
 
-# A base64 data URL runs ~1.37x the raw byte size; this caps raw images at
-# roughly 6MB each so one oversized photo can't silently blow up the
-# Postgres free-tier storage quota.
-_MAX_IMAGE_DATA_URL_LEN = 8_000_000
+# A base64 data URL runs ~1.37x the raw byte size; this caps the upload
+# payload at roughly 15MB each — generous headroom now that photos land in
+# R2 rather than Postgres, just guarding against outright abuse.
+_MAX_IMAGE_DATA_URL_LEN = 20_000_000
 
 
 @router.get("", response_model=list[schemas.GalleryPhotoOut])
@@ -34,6 +34,8 @@ def upload_photos(
 ):
     if not payload:
         raise HTTPException(status_code=422, detail="No photos given")
+    if not config.R2_ENABLED:
+        raise HTTPException(status_code=503, detail="Photo storage is not configured")
     rows = []
     for item in payload:
         album = item.album.strip()[:160] or "Club gallery"
@@ -41,11 +43,13 @@ def upload_photos(
             raise HTTPException(status_code=422, detail="Each photo must be a data:image/... URL")
         if len(item.image) > _MAX_IMAGE_DATA_URL_LEN:
             raise HTTPException(status_code=413, detail="One of the photos is too large")
+        url, key = storage.upload_gallery_image(item.image, member.club_id)
         rows.append(
             models.GalleryPhoto(
                 club_id=member.club_id,
                 album=album,
-                image=item.image,
+                image=url,
+                storage_key=key,
                 uploaded_by=member.id,
             )
         )
@@ -65,6 +69,7 @@ def delete_photo(
     photo = db.get(models.GalleryPhoto, photo_id)
     if photo is None or photo.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Photo not found")
+    storage.delete_gallery_image(photo.storage_key)
     db.delete(photo)
     db.commit()
     return {"deleted": True}

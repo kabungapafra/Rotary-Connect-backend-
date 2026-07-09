@@ -29,3 +29,15 @@ SMS_ENABLED = bool(YOOLA_API_KEY)
 # This backend's own public URL — used to build real, working links (event
 # registration QR codes) rather than a domain the club doesn't control.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://rotary-connect-backend.onrender.com")
+
+# Cloudflare R2 (S3-compatible) — gallery photos live here, not as base64
+# blobs in Postgres, which would blow past the free-tier DB storage quota
+# as the gallery grows. Sending is skipped (not errored) when unconfigured,
+# so local dev doesn't need a live bucket.
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "rotary-connect-gallery")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
+R2_ENDPOINT_URL = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com" if R2_ACCOUNT_ID else ""
+R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_PUBLIC_URL)

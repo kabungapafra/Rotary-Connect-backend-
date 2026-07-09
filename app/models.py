@@ -208,7 +208,13 @@ class GalleryPhoto(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     album: Mapped[str] = mapped_column(String(160))
-    image: Mapped[str] = mapped_column(Text)  # "data:image/jpeg;base64,..."
+    # Public R2 URL the app displays directly. Older rows (from before R2
+    # was wired up) briefly hold a "data:image/...;base64,..." string until
+    # the startup migration in main.py uploads them and rewrites this.
+    image: Mapped[str] = mapped_column(Text)
+    # R2 object key, needed to delete the file from the bucket. Null only
+    # for legacy base64 rows not yet migrated.
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
