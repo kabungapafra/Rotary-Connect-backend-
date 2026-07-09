@@ -267,6 +267,38 @@ class ClubMemberCreateResponse(BaseModel):
     pin: str
 
 
+class GalleryPhotoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    album: str
+    image: str
+    created_at: datetime
+
+
+class GalleryPhotoCreate(BaseModel):
+    album: str
+    image: str  # "data:image/jpeg;base64,..."
+
+
+class EventRegistrationOut(BaseModel):
+    link: str
+    qr_image: str  # "data:image/png;base64,..."
+
+
+class EventRsvpCreate(BaseModel):
+    name: str
+    phone: str
+
+
+class NextMeetingOut(BaseModel):
+    event_id: int
+    name: str
+    venue: str
+    time_label: str
+    date_iso: str
+
+
 class AnalyticsOut(BaseModel):
     total_clubs: int
     active_clubs: int

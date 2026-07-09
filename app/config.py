@@ -25,3 +25,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 YOOLA_API_KEY = os.getenv("YOOLA_API_KEY", "")
 YOOLA_API_URL = os.getenv("YOOLA_API_URL", "https://yoolasms.com/api/v1/send")
 SMS_ENABLED = bool(YOOLA_API_KEY)
+
+# This backend's own public URL — used to build real, working links (event
+# registration QR codes) rather than a domain the club doesn't control.
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://rotary-connect-backend.onrender.com")

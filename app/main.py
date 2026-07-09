@@ -17,6 +17,8 @@ from .routers import (
     checkin,
     club_data,
     club_members,
+    event_registration,
+    gallery,
 )
 from .scheduler import scheduler
 from .seed import seed_bootstrap_data
@@ -42,6 +44,8 @@ app.include_router(admin_clubs.router)
 app.include_router(admin_members.router)
 app.include_router(admin_analytics.router)
 app.include_router(admin_sms.router)
+app.include_router(gallery.router)
+app.include_router(event_registration.router)
 
 
 def _run_birthday_sweep_job() -> None:

@@ -1,11 +1,17 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import SessionLocal, get_db
-from ..event_announcements import schedule_event_announcement, unschedule_event_announcement
+from ..event_announcements import (
+    next_occurrence_utc,
+    parse_event_time,
+    schedule_event_announcement,
+    unschedule_event_announcement,
+    venue_from_meta,
+)
 from ..security import get_current_member
 from ..sms import send_bulk_sms
 from .club_members import PRESIDENT_ROLE
@@ -55,6 +61,41 @@ def list_events(
         .filter(models.Event.club_id == member.club_id)
         .order_by(models.Event.id)
         .all()
+    )
+
+
+@router.get("/events/next", response_model=schemas.NextMeetingOut)
+def next_meeting(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """The soonest upcoming occurrence across all of the club's weekly
+    events — real date/time/venue computed from each event's day-of-week
+    and parsed time, not a static placeholder. Once today's/this-week's
+    occurrence has passed, `next_occurrence_utc` naturally rolls to next
+    week, so this always reflects what's actually next."""
+    events = db.query(models.Event).filter(models.Event.club_id == member.club_id).all()
+    if not events:
+        raise HTTPException(status_code=404, detail="No events scheduled for this club yet")
+
+    best_event = None
+    best_dt = None
+    for event in events:
+        parsed = parse_event_time(event.meta)
+        hour, minute = parsed if parsed else (12, 0)
+        next_dt = next_occurrence_utc(event.dow, hour, minute)
+        if best_dt is None or next_dt < best_dt:
+            best_dt, best_event = next_dt, event
+
+    local_dt = best_dt + timedelta(hours=3)  # Africa/Kampala, fixed UTC+3
+    parsed = parse_event_time(best_event.meta)
+    time_label = f"{local_dt.strftime('%I:%M %p').lstrip('0')}" if parsed else ""
+    return schemas.NextMeetingOut(
+        event_id=best_event.id,
+        name=best_event.name,
+        venue=venue_from_meta(best_event.meta),
+        time_label=time_label,
+        date_iso=local_dt.date().isoformat(),
     )
 
 

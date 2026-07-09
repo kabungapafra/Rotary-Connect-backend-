@@ -196,3 +196,41 @@ class SmsLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class GalleryPhoto(Base):
+    """A photo in the club gallery. Stored as a base64 data URL directly in
+    Postgres — same approach as Club.logo — since the Render free-tier web
+    service has no persistent filesystem to hold uploaded files."""
+
+    __tablename__ = "gallery_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    album: Mapped[str] = mapped_column(String(160))
+    image: Mapped[str] = mapped_column(Text)  # "data:image/jpeg;base64,..."
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    club: Mapped["Club"] = relationship()
+    uploader: Mapped["Member"] = relationship()
+
+
+class EventRsvp(Base):
+    """One row per guest who registers via an event's QR/registration link.
+    Separate from GuestVisit (a club's daily walk-in check-in log) — this
+    tracks interest in one specific upcoming fellowship, ahead of time."""
+
+    __tablename__ = "event_rsvps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    phone: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    event: Mapped["Event"] = relationship()

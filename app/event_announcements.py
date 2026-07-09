@@ -14,6 +14,7 @@ silently never notifying the club.
 
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.jobstores.base import JobLookupError
 from sqlalchemy.orm import Session
@@ -53,6 +54,41 @@ def parse_event_time(meta: str) -> tuple[int, int] | None:
     elif ampm == "am" and hour == 12:
         hour = 0
     return hour, minute
+
+
+def venue_from_meta(meta: str) -> str:
+    """Whatever follows the clock time in "6:00 PM - Hall" -> "Hall". If
+    there's no separator (or no parseable time at all), the whole field is
+    the venue text — better than showing nothing."""
+    parts = re.split(r"[-–—·,]", meta, maxsplit=1)
+    if len(parts) == 2 and parse_event_time(parts[0]) is not None:
+        return parts[1].strip()
+    return meta.strip()
+
+
+def next_occurrence_utc(
+    dow: str, local_hour: int, local_minute: int, now: datetime | None = None
+) -> datetime:
+    """The next absolute UTC datetime this weekly dow/local-time falls on
+    (today counts, if it hasn't passed yet)."""
+    now = now or datetime.now(timezone.utc)
+    idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
+    utc_hour = local_hour - _EAT_OFFSET_HOURS
+    day_shift = 0
+    while utc_hour < 0:
+        utc_hour += 24
+        day_shift -= 1
+    while utc_hour >= 24:
+        utc_hour -= 24
+        day_shift += 1
+    target_idx = (idx + day_shift) % 7
+    days_ahead = (target_idx - now.weekday()) % 7
+    candidate = (now + timedelta(days=days_ahead)).replace(
+        hour=utc_hour, minute=local_minute, second=0, microsecond=0
+    )
+    if candidate < now:
+        candidate += timedelta(days=7)
+    return candidate
 
 
 def _reminder_utc(dow: str, local_hour: int, local_minute: int) -> tuple[str, int, int]:
