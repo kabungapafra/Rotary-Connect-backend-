@@ -1,5 +1,3 @@
-import time
-from collections import defaultdict
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -9,6 +7,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..birthdays import wish_if_due
 from ..database import get_db
+from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
 from ..sms import normalize_ugandan_phone
@@ -19,19 +18,13 @@ DEFAULT_MEETING_NAME = "Weekly Fellowship Meeting"
 
 # Per-IP throttle for the unauthenticated guest endpoint — the per-phone
 # daily dedup below stops repeat SMS to one number, this stops someone from
-# working through many club_ids against a single victim number. In-memory
-# is fine: single free-tier instance, and the window is short.
+# working through many club_ids against a single victim number.
 _GUEST_WINDOW_SECONDS = 600
 _GUEST_MAX_PER_WINDOW = 5
-_guest_request_log: dict[str, list[float]] = defaultdict(list)
 
 
 def _guest_rate_limit_ok(client_ip: str) -> bool:
-    now = time.monotonic()
-    recent = [t for t in _guest_request_log[client_ip] if now - t < _GUEST_WINDOW_SECONDS]
-    recent.append(now)
-    _guest_request_log[client_ip] = recent
-    return len(recent) <= _GUEST_MAX_PER_WINDOW
+    return rate_limit_ok(f"guest:{client_ip}", _GUEST_MAX_PER_WINDOW, _GUEST_WINDOW_SECONDS)
 
 
 def _get_or_create_todays_meeting(db: Session, club_id: int) -> models.Meeting:
