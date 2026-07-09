@@ -19,6 +19,7 @@ from .. import config, models, schemas
 from ..database import get_db
 from ..security import get_current_member
 from ..sms import normalize_ugandan_phone
+from .club_members import EVENT_REGISTRATION_ROLES
 
 router = APIRouter(tags=["event-registration"])
 
@@ -41,6 +42,12 @@ def get_event_registration(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
+    if member.role not in EVENT_REGISTRATION_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the President, Sergeant-at-Arms, President-Elect, "
+            "Secretary, or Immediate Past President can generate this",
+        )
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")

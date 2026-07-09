@@ -9,13 +9,24 @@ from ..utils import generate_member_number, generate_pin
 
 router = APIRouter(prefix="/club/members", tags=["club"])
 
-PRESIDENT_ROLE = "Club President"
+PRESIDENT_ROLE = "Club President"  # stored on a club's auto-created president
+# "President" is the mobile app's Add Member role-dropdown label — a member
+# manually given that title has the same authority as the auto-created one.
+PRESIDENT_ROLES = {"Club President", "President"}
+
+# Executive roles allowed to generate an event's registration QR/link.
+EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
+    "Sergeant-at-Arms",
+    "President-Elect",
+    "Secretary",
+    "Immediate Past President",
+}
 
 
 def _require_president(member: models.Member) -> None:
     """Only the Club President can add and manage the club's other
     administrators and members."""
-    if member.role != PRESIDENT_ROLE:
+    if member.role not in PRESIDENT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Club President can manage members",

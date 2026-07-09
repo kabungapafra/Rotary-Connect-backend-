@@ -14,7 +14,7 @@ from ..event_announcements import (
 )
 from ..security import get_current_member
 from ..sms import send_bulk_sms
-from .club_members import PRESIDENT_ROLE
+from .club_members import PRESIDENT_ROLES
 
 router = APIRouter(prefix="/club", tags=["club"])
 
@@ -42,7 +42,7 @@ def _announce_new_event(club_id: int, event_name: str, event_meta: str) -> None:
 
 
 def _require_president(member: models.Member) -> None:
-    if member.role != PRESIDENT_ROLE:
+    if member.role not in PRESIDENT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Club President can manage this",
