@@ -178,3 +178,17 @@ class GuestVisit(Base):
     )
 
     club: Mapped["Club"] = relationship()
+
+
+class SmsLog(Base):
+    """One row per SMS send attempt — powers the admin dashboard's SMS
+    view with real counts instead of guessed/static numbers."""
+
+    __tablename__ = "sms_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    phone: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))  # sent | failed
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

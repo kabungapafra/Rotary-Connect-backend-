@@ -10,11 +10,26 @@ import re
 
 import requests
 
-from . import config
+from . import config, models
+from .database import SessionLocal
 
 logger = logging.getLogger("rotary.sms")
 
 _MAX_MESSAGE_LENGTH = 480  # a handful of SMS segments; also caps abuse cost
+
+
+def _log_attempt(phone: str, status: str) -> None:
+    """Record one send attempt so the admin dashboard's SMS view can show
+    real numbers instead of guessing. Best-effort like everything else here
+    — a logging failure must never be the reason an SMS call raises."""
+    db = SessionLocal()
+    try:
+        db.add(models.SmsLog(phone=phone, status=status))
+        db.commit()
+    except Exception:
+        logger.exception("Failed to record SMS log entry")
+    finally:
+        db.close()
 
 
 def normalize_ugandan_phone(raw: str) -> str | None:
@@ -59,10 +74,13 @@ def send_sms(phone: str, message: str) -> bool:
             logger.error(
                 "Yoola SMS to %s failed: %s %s", number, response.status_code, response.text[:300]
             )
+            _log_attempt(number, "failed")
             return False
+        _log_attempt(number, "sent")
         return True
     except requests.RequestException as exc:
         logger.error("Yoola SMS to %s raised %s", number, exc)
+        _log_attempt(number, "failed")
         return False
 
 

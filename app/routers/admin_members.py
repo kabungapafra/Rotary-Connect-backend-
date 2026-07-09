@@ -81,6 +81,17 @@ def reset_password(member_id: int, background_tasks: BackgroundTasks, db: Sessio
     return schemas.ResetPasswordResponse(member_name=member.name, new_pin=new_pin)
 
 
+@router.delete("/{member_id}")
+def delete_member(member_id: int, db: Session = Depends(get_db)):
+    member = _get_or_404(db, member_id)
+    db.query(models.CheckIn).filter(models.CheckIn.member_id == member_id).delete(
+        synchronize_session=False
+    )
+    db.delete(member)
+    db.commit()
+    return {"deleted": True}
+
+
 @router.get("/{member_id}/activity", response_model=schemas.MemberActivityOut)
 def member_activity(member_id: int, db: Session = Depends(get_db)):
     member = _get_or_404(db, member_id)
