@@ -1,10 +1,10 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..database import SessionLocal, get_db
+from ..database import get_db
 from ..event_announcements import (
     next_occurrence_utc,
     parse_event_time,
@@ -13,7 +13,6 @@ from ..event_announcements import (
     venue_from_meta,
 )
 from ..security import get_current_member
-from ..sms import send_bulk_sms
 from ..storage import delete_gallery_image, upload_gallery_image
 from ..utils import get_or_create_meeting
 from .club_members import PRESIDENT_ROLES
@@ -40,28 +39,6 @@ def _apply_r2_image(obj: "models.Event | models.Project", image: str | None, pre
     obj.storage_key = key
 
 router = APIRouter(prefix="/club", tags=["club"])
-
-
-def _announce_new_event(club_id: int, event_name: str, event_meta: str) -> None:
-    """Runs as a background task with its own DB session — the request's
-    session may already be torn down by the time this executes."""
-    db = SessionLocal()
-    try:
-        club = db.get(models.Club, club_id)
-        if club is None:
-            return
-        phones = [
-            m.phone
-            for m in db.query(models.Member).filter(models.Member.club_id == club_id)
-            if m.phone
-        ]
-        text = f"📅 New fellowship: {event_name}"
-        if event_meta.strip():
-            text += f" — {event_meta.strip()}"
-        text += f". See you there! — {club.name}"
-        send_bulk_sms(phones, text)
-    finally:
-        db.close()
 
 
 def _require_president(member: models.Member) -> None:
@@ -125,7 +102,6 @@ def next_meeting(
 @router.post("/events", response_model=schemas.EventOut)
 def create_event(
     payload: schemas.EventCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
@@ -144,11 +120,11 @@ def create_event(
     _apply_r2_image(event, payload.image, prefix="events")
     db.commit()
     # Schedule the recurring "4 hours before" reminder + "1 hour after"
-    # thank-you. If the TIME & VENUE text has no parseable clock time, we
-    # can't compute either offset — fall back to one immediate
-    # announcement so the club still hears about it.
-    if not schedule_event_announcement(event):
-        background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
+    # thank-you — the only two SMS this ever sends for an event. If the
+    # TIME & VENUE text has no parseable clock time, neither offset can be
+    # computed, so no reminder is scheduled at all (never an immediate
+    # announcement as a fallback).
+    schedule_event_announcement(event)
     return event
 
 
