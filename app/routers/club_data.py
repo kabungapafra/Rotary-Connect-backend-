@@ -316,9 +316,16 @@ def submit_apology(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    """A member apologises for today's meeting — one apology per member
-    per meeting date, same as a check-in."""
-    meeting = get_or_create_meeting(db, member.club_id)
+    """A member apologises for a meeting they'll miss — the app sends the
+    upcoming fellowship's date; one apology per member per meeting date,
+    same as a check-in."""
+    on_date = None
+    if payload.meeting_date:
+        try:
+            on_date = date.fromisoformat(payload.meeting_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="meeting_date must be YYYY-MM-DD")
+    meeting = get_or_create_meeting(db, member.club_id, on_date)
     existing = (
         db.query(models.Apology)
         .filter(models.Apology.member_id == member.id, models.Apology.meeting_date == meeting.date)

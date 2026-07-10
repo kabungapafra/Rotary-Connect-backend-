@@ -13,7 +13,9 @@ router = APIRouter(prefix="/club/secretary", tags=["secretary"])
 
 
 def _require_secretary(member: models.Member) -> None:
-    if member.role != "Secretary" and member.role not in PRESIDENT_ROLES:
+    """Strictly the Secretary — the workspace is theirs alone, the
+    President doesn't share it (unlike most other privileged actions)."""
+    if member.role != "Secretary":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Club Secretary can manage this",

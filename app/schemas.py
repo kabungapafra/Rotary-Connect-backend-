@@ -301,6 +301,9 @@ class NextMeetingOut(BaseModel):
 
 class ApologyCreate(BaseModel):
     reason: str = ""
+    # ISO date of the meeting being missed (the app sends the next
+    # fellowship's date); today's meeting when omitted.
+    meeting_date: str | None = None
 
 
 class ApologyOut(BaseModel):
