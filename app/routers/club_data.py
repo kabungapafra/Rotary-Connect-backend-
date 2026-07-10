@@ -14,6 +14,7 @@ from ..event_announcements import (
 )
 from ..security import get_current_member
 from ..sms import send_bulk_sms
+from ..utils import get_or_create_meeting
 from .club_members import PRESIDENT_ROLES
 
 router = APIRouter(prefix="/club", tags=["club"])
@@ -305,3 +306,72 @@ def my_summary(
         today_meeting_name=today_meeting.name if today_meeting else "Weekly Fellowship Meeting",
         member_count=member_count,
     )
+
+
+# ── apologies ───────────────────────────────────────────────────────────
+
+@router.post("/apologies", response_model=schemas.ApologyOut)
+def submit_apology(
+    payload: schemas.ApologyCreate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """A member apologises for today's meeting — one apology per member
+    per meeting date, same as a check-in."""
+    meeting = get_or_create_meeting(db, member.club_id)
+    existing = (
+        db.query(models.Apology)
+        .filter(models.Apology.member_id == member.id, models.Apology.meeting_date == meeting.date)
+        .first()
+    )
+    if existing:
+        existing.reason = payload.reason.strip()
+        db.commit()
+        db.refresh(existing)
+        row = existing
+    else:
+        row = models.Apology(
+            club_id=member.club_id,
+            member_id=member.id,
+            meeting_date=meeting.date,
+            reason=payload.reason.strip(),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return schemas.ApologyOut(
+        id=row.id,
+        member_name=member.name,
+        member_role=member.role,
+        meeting_date=row.meeting_date.isoformat(),
+        reason=row.reason,
+        created_at=row.created_at,
+    )
+
+
+@router.get("/apologies", response_model=list[schemas.ApologyOut])
+def list_apologies(
+    meeting_date: date | None = None,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Visible to any club member — the register screen decides who to
+    show the tab to, same as it already does for the club register."""
+    on_date = meeting_date or date.today()
+    rows = (
+        db.query(models.Apology)
+        .filter(models.Apology.club_id == member.club_id, models.Apology.meeting_date == on_date)
+        .order_by(models.Apology.created_at)
+        .all()
+    )
+    return [
+        schemas.ApologyOut(
+            id=row.id,
+            member_name=row.member.name,
+            member_role=row.member.role,
+            meeting_date=row.meeting_date.isoformat(),
+            reason=row.reason,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]

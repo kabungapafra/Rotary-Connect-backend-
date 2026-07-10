@@ -299,6 +299,134 @@ class NextMeetingOut(BaseModel):
     date_iso: str
 
 
+class ApologyCreate(BaseModel):
+    reason: str = ""
+
+
+class ApologyOut(BaseModel):
+    id: int
+    member_name: str
+    member_role: str
+    meeting_date: str
+    reason: str
+    created_at: datetime
+
+
+class DuesSettingUpdate(BaseModel):
+    amount: int
+    period: str = "quarterly"  # quarterly | monthly | annual
+
+
+class DuesMemberOut(BaseModel):
+    member_id: int
+    name: str
+    role: str
+    paid: bool
+
+
+class TransactionCreate(BaseModel):
+    kind: str  # income | expense
+    label: str
+    amount: int
+
+
+class TransactionOut(BaseModel):
+    id: int
+    kind: str
+    label: str
+    amount: int
+    created_at: datetime
+
+
+class TreasurySummaryOut(BaseModel):
+    dues_amount: int
+    dues_period: str
+    dues_period_label: str
+    dues_collected: int
+    dues_outstanding: int
+    total_income: int
+    total_expenses: int
+
+
+class PollCreate(BaseModel):
+    type: str  # motion | election | draw
+    title: str
+    sub: str = ""
+    closes_label: str = ""
+    options: list[str] = []
+
+
+class PollOptionResult(BaseModel):
+    label: str
+    count: int
+
+
+class PollOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    sub: str
+    closes_label: str
+    options: list[str]
+    status: str
+    winner: str | None
+    results: list[PollOptionResult]
+    my_vote: str | None
+    total_votes: int
+
+
+class PollVoteCreate(BaseModel):
+    choice: str
+
+
+class MinuteCreate(BaseModel):
+    title: str
+    meeting_date: str  # "YYYY-MM-DD"
+
+
+class MinuteStatusUpdate(BaseModel):
+    status: str  # draft | approved
+
+
+class MinuteOut(BaseModel):
+    id: int
+    title: str
+    meeting_date: str
+    status: str
+    created_at: datetime
+
+
+class MilestoneCreate(BaseModel):
+    year: str
+    title: str
+    category: str = "Milestones"
+    text: str = ""
+
+
+class MilestoneOut(BaseModel):
+    id: int
+    year: str
+    title: str
+    category: str
+    text: str
+
+
+class ReportRow(BaseModel):
+    label: str
+    value: str
+
+
+class ReportSection(BaseModel):
+    section: str
+    rows: list[ReportRow]
+
+
+class ReportOut(BaseModel):
+    title: str
+    subtitle: str
+    sections: list[ReportSection]
+
+
 class AnalyticsOut(BaseModel):
     total_clubs: int
     active_clubs: int

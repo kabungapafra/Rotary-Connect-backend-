@@ -38,6 +38,35 @@ def format_display_date(value: date | None) -> str | None:
     return value.strftime(DATE_FORMAT) if value else None
 
 
+def get_or_create_meeting(db: Session, club_id: int, on_date: date | None = None) -> "models.Meeting":
+    """One row per club per calendar day a meeting happens — shared by
+    check-in and apologies so both land on the same Meeting row."""
+    on_date = on_date or date.today()
+    meeting = (
+        db.query(models.Meeting)
+        .filter(models.Meeting.club_id == club_id, models.Meeting.date == on_date)
+        .first()
+    )
+    if meeting is None:
+        meeting = models.Meeting(club_id=club_id, name="Weekly Fellowship Meeting", date=on_date)
+        db.add(meeting)
+        db.commit()
+        db.refresh(meeting)
+    return meeting
+
+
+def current_period_label(period: str, on_date: date | None = None) -> str:
+    """The dues period a payment made "today" belongs to, e.g. "2026-Q3"
+    (quarterly), "2026-07" (monthly), "2026" (annual)."""
+    on_date = on_date or date.today()
+    if period == "monthly":
+        return f"{on_date.year}-{on_date.month:02d}"
+    if period == "annual":
+        return f"{on_date.year}"
+    quarter = (on_date.month - 1) // 3 + 1
+    return f"{on_date.year}-Q{quarter}"
+
+
 def compute_payment_status(next_due_date: date | None) -> str:
     """paid / due-soon (within 7 days) / overdue, derived from the due date
     rather than stored, so it can never drift out of sync."""

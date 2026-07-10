@@ -224,6 +224,152 @@ class GalleryPhoto(Base):
     uploader: Mapped["Member"] = relationship()
 
 
+class Apology(Base):
+    """A member's apology for missing a specific day's meeting — one per
+    member per meeting date, shown to the board in the attendance
+    register's Apologies tab."""
+
+    __tablename__ = "apologies"
+    __table_args__ = (
+        UniqueConstraint("member_id", "meeting_date", name="uq_apology_member_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    meeting_date: Mapped[date] = mapped_column(Date, index=True)
+    reason: Mapped[str] = mapped_column(String(240), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    member: Mapped["Member"] = relationship()
+
+
+class ClubDuesSetting(Base):
+    """One row per club: the dues amount and period the Treasurer has
+    configured. Absent until the Treasurer sets it for the first time."""
+
+    __tablename__ = "club_dues_settings"
+
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), primary_key=True)
+    amount: Mapped[int] = mapped_column(Integer, default=0)  # UGX
+    period: Mapped[str] = mapped_column(String(20), default="quarterly")  # quarterly | monthly | annual
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DuesPayment(Base):
+    """A member is 'paid' for a given period iff a row exists here — no
+    stored paid/pending flag to drift out of sync when the period rolls
+    over."""
+
+    __tablename__ = "dues_payments"
+    __table_args__ = (
+        UniqueConstraint("member_id", "period_label", name="uq_dues_member_period"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    period_label: Mapped[str] = mapped_column(String(20))  # e.g. "2026-Q3"
+    paid_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Transaction(Base):
+    """One row per income/expense entry the Treasurer records — the
+    club's cash ledger."""
+
+    __tablename__ = "transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # income | expense
+    label: Mapped[str] = mapped_column(String(160))
+    amount: Mapped[int] = mapped_column(Integer)  # UGX, always positive
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class Poll(Base):
+    """A club vote — a motion, an election, or a random draw. Only one may
+    be open per club at a time (creating a new one closes the last)."""
+
+    __tablename__ = "polls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    type: Mapped[str] = mapped_column(String(10))  # motion | election | draw
+    title: Mapped[str] = mapped_column(String(200))
+    sub: Mapped[str] = mapped_column(String(240), default="")
+    closes_label: Mapped[str] = mapped_column(String(40), default="")
+    options: Mapped[str] = mapped_column(Text)  # JSON-encoded list[str]
+    status: Mapped[str] = mapped_column(String(10), default="open")  # open | closed
+    winner: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    votes: Mapped[list["PollVote"]] = relationship(back_populates="poll")
+
+
+class PollVote(Base):
+    __tablename__ = "poll_votes"
+    __table_args__ = (UniqueConstraint("poll_id", "member_id", name="uq_pollvote_poll_member"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    poll_id: Mapped[int] = mapped_column(ForeignKey("polls.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    choice: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    poll: Mapped["Poll"] = relationship(back_populates="votes")
+    member: Mapped["Member"] = relationship()
+
+
+class Minute(Base):
+    """A meeting minutes record the Secretary maintains — draft until the
+    board approves it."""
+
+    __tablename__ = "minutes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    meeting_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(10), default="draft")  # draft | approved
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Milestone(Base):
+    """One entry in the club's history timeline — entirely secretary-
+    authored, no fabricated seed content."""
+
+    __tablename__ = "milestones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    year: Mapped[str] = mapped_column(String(10))
+    title: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(40), default="Milestones")
+    text: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class EventRsvp(Base):
     """One row per guest who registers via an event's QR/registration link.
     Separate from GuestVisit (a club's daily walk-in check-in log) — this

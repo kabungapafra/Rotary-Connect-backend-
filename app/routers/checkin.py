@@ -11,6 +11,7 @@ from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
 from ..sms import normalize_ugandan_phone
+from ..utils import get_or_create_meeting
 
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 
@@ -28,18 +29,7 @@ def _guest_rate_limit_ok(client_ip: str) -> bool:
 
 
 def _get_or_create_todays_meeting(db: Session, club_id: int) -> models.Meeting:
-    today = date.today()
-    meeting = (
-        db.query(models.Meeting)
-        .filter(models.Meeting.club_id == club_id, models.Meeting.date == today)
-        .first()
-    )
-    if meeting is None:
-        meeting = models.Meeting(club_id=club_id, name=DEFAULT_MEETING_NAME, date=today)
-        db.add(meeting)
-        db.commit()
-        db.refresh(meeting)
-    return meeting
+    return get_or_create_meeting(db, club_id)
 
 
 @router.post("", response_model=schemas.CheckInResponse)

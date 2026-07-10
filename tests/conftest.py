@@ -44,9 +44,15 @@ def test_club(db):
     db.commit()
     db.refresh(club)
     yield club
-    # Tests hit real endpoints that create rows (events, members, ...)
-    # beyond what the make_* fixtures below track — clear anything left
-    # over for this club before deleting it, or the FK constraint trips.
+    # Tests hit real endpoints that create rows (events, ...) beyond what
+    # the make_* fixtures below track — clear anything left over for this
+    # club before deleting it, or the FK constraint trips. Rows that carry
+    # a member_id/created_by FK are cleaned up in make_member's own
+    # teardown instead, since that runs (and deletes the members) before
+    # this one does.
+    db.query(models.ClubDuesSetting).filter(
+        models.ClubDuesSetting.club_id == club.id
+    ).delete()
     db.query(models.Event).filter(models.Event.club_id == club.id).delete()
     db.query(models.Member).filter(models.Member.club_id == club.id).delete()
     db.commit()
@@ -80,6 +86,39 @@ def make_member(db, test_club):
         return member
 
     yield _make
+    # Rows a test created that reference these members (votes, apologies,
+    # dues payments, minutes/milestones authored by them, transactions they
+    # recorded) must go first, or deleting the member trips the FK.
+    member_ids = [m.id for m in created]
+    if member_ids:
+        poll_ids = [
+            p.id for p in db.query(models.Poll).filter(models.Poll.created_by.in_(member_ids))
+        ]
+        if poll_ids:
+            db.query(models.PollVote).filter(models.PollVote.poll_id.in_(poll_ids)).delete(
+                synchronize_session=False
+            )
+        db.query(models.PollVote).filter(models.PollVote.member_id.in_(member_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(models.Poll).filter(models.Poll.created_by.in_(member_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(models.Apology).filter(models.Apology.member_id.in_(member_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(models.Transaction).filter(
+            models.Transaction.created_by.in_(member_ids)
+        ).delete(synchronize_session=False)
+        db.query(models.DuesPayment).filter(
+            models.DuesPayment.member_id.in_(member_ids)
+        ).delete(synchronize_session=False)
+        db.query(models.Minute).filter(models.Minute.created_by.in_(member_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(models.Milestone).filter(models.Milestone.created_by.in_(member_ids)).delete(
+            synchronize_session=False
+        )
     for member in created:
         db.delete(member)
     db.commit()
