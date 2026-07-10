@@ -55,6 +55,11 @@ def get_event_registration(
     return schemas.EventRegistrationOut(link=link, qr_image=_qr_data_url(link))
 
 
+# Same categories the in-app QR check-in already offers a guest, plus
+# "Member" for an existing member RSVP-ing ahead of time.
+_ATTENDEE_TYPES = ["Member", "Prospective member", "Visiting Rotarian", "Friend & family"]
+
+
 def _rsvp_page(event: models.Event, club: models.Club, message: str | None = None) -> str:
     name = html.escape(event.name)
     meta = html.escape(event.meta)
@@ -63,6 +68,11 @@ def _rsvp_page(event: models.Event, club: models.Club, message: str | None = Non
         f'<p style="color:#1a7f37;font-weight:700;margin:0 0 16px">{html.escape(message)}</p>'
         if message
         else ""
+    )
+    type_options = "".join(
+        f'<label class="type-opt"><input type="radio" name="attendee_type" value="{html.escape(t)}"'
+        f'{" checked" if t == "Member" else ""} onchange="toggleClub()"> {html.escape(t)}</label>'
+        for t in _ATTENDEE_TYPES
     )
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
@@ -81,9 +91,21 @@ def _rsvp_page(event: models.Event, club: models.Club, message: str | None = Non
            color: #8B96A8; margin: 14px 0 6px; }}
   input {{ width: 100%; box-sizing: border-box; padding: 11px 12px; font-size: 14px;
            border: 1.5px solid #D4DBE8; border-radius: 10px; }}
+  .type-opt {{ display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
+               color: #1A2333; text-transform: none; letter-spacing: normal; margin: 0 0 8px; }}
+  .type-opt input {{ width: auto; }}
+  #club-field {{ display: none; }}
   button {{ width: 100%; margin-top: 18px; padding: 13px; font-size: 14px; font-weight: 800;
             color: #fff; background: #17458F; border: none; border-radius: 12px; cursor: pointer; }}
-</style></head>
+</style>
+<script>
+  function toggleClub() {{
+    var isVisiting = document.querySelector('input[name="attendee_type"]:checked').value === 'Visiting Rotarian';
+    document.getElementById('club-field').style.display = isVisiting ? 'block' : 'none';
+    document.getElementById('club-input').required = isVisiting;
+  }}
+</script>
+</head>
 <body>
   <div class="card">
     <span class="badge">{club_name}</span>
@@ -91,10 +113,16 @@ def _rsvp_page(event: models.Event, club: models.Club, message: str | None = Non
     <p class="meta">{meta}</p>
     {banner}
     <form method="post">
+      <label>I AM A...</label>
+      {type_options}
       <label>YOUR NAME</label>
       <input name="name" required maxlength="120">
       <label>PHONE NUMBER</label>
       <input name="phone" required maxlength="20" placeholder="e.g. 0772 000 000">
+      <div id="club-field">
+        <label>YOUR CLUB</label>
+        <input id="club-input" name="club_name" maxlength="160" placeholder="e.g. Rotary Club of Naalya">
+      </div>
       <button type="submit">Register</button>
     </form>
   </div>
@@ -115,6 +143,8 @@ def rsvp_submit(
     event_id: int,
     name: str = Form(...),
     phone: str = Form(...),
+    attendee_type: str = Form("Member"),
+    club_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
     event = db.get(models.Event, event_id)
@@ -123,12 +153,22 @@ def rsvp_submit(
     club = db.get(models.Club, event.club_id)
     clean_name = name.strip()[:120]
     clean_phone = normalize_ugandan_phone(phone)
-    if not clean_name or clean_phone is None:
+    clean_type = attendee_type.strip() if attendee_type.strip() in _ATTENDEE_TYPES else "Member"
+    clean_club = club_name.strip()[:160] if clean_type == "Visiting Rotarian" else ""
+    if not clean_name or clean_phone is None or (clean_type == "Visiting Rotarian" and not clean_club):
         return HTMLResponse(
             _rsvp_page(event, club, message=None).replace(
-                "<form", '<p style="color:#B3261E;font-weight:700">Enter a valid name and phone number.</p><form'
+                "<form", '<p style="color:#B3261E;font-weight:700">Enter a valid name, phone number, and club (if visiting).</p><form'
             )
         )
-    db.add(models.EventRsvp(event_id=event.id, name=clean_name, phone=clean_phone))
+    db.add(
+        models.EventRsvp(
+            event_id=event.id,
+            name=clean_name,
+            phone=clean_phone,
+            attendee_type=clean_type,
+            club_name=clean_club,
+        )
+    )
     db.commit()
     return HTMLResponse(_rsvp_page(event, club, message=f"You're registered, {clean_name.split()[0]}! See you there."))

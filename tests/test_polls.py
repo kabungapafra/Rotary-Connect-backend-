@@ -52,9 +52,8 @@ def test_board_member_creates_motion_and_others_vote_once(client, make_member):
     assert res.json()["my_vote"] == "Yes"
 
 
-def test_election_needs_two_candidates_and_draw_picks_a_server_side_winner(client, make_member):
+def test_election_needs_two_candidates(client, make_member):
     board = make_member(role="President", suffix="043", is_board=True)
-    member = make_member(role="Member", suffix="044")
 
     res = client.post(
         "/club/polls",
@@ -63,29 +62,47 @@ def test_election_needs_two_candidates_and_draw_picks_a_server_side_winner(clien
     )
     assert res.status_code == 422
 
+
+def test_draw_pairs_every_member_with_someone_else_no_repeats_no_self(client, make_member):
+    board = make_member(role="President", suffix="046", is_board=True)
+    m2 = make_member(role="Member", suffix="047")
+    m3 = make_member(role="Member", suffix="048")
+    m4 = make_member(role="Member", suffix="049")
+
     res = client.post(
-        "/club/polls",
-        json={
-            "type": "draw",
-            "title": "Raffle",
-            "options": ["Alice", "Bob", "Carol"],
-        },
-        headers=_auth(board),
+        "/club/polls", json={"type": "draw", "title": "Gift exchange"}, headers=_auth(board)
     )
     assert res.status_code == 200
     poll = res.json()
+    # Every current club member is an entrant, not a hand-picked subset.
+    names = {f"Rtn. {m.name}" for m in [board, m2, m3, m4]}
+    assert set(poll["options"]) == names
+    assert poll["assignments"] is None  # not drawn yet
 
     # A member can't vote on a draw, and can't resolve it either.
-    res = client.post(f"/club/polls/{poll['id']}/vote", json={"choice": "Alice"}, headers=_auth(member))
+    res = client.post(
+        f"/club/polls/{poll['id']}/vote", json={"choice": poll["options"][0]}, headers=_auth(m2)
+    )
     assert res.status_code == 422
-    res = client.post(f"/club/polls/{poll['id']}/draw", headers=_auth(member))
+    res = client.post(f"/club/polls/{poll['id']}/draw", headers=_auth(m2))
     assert res.status_code == 403
 
     res = client.post(f"/club/polls/{poll['id']}/draw", headers=_auth(board))
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "closed"
-    assert body["winner"] in ["Alice", "Bob", "Carol"]
+    assignments = body["assignments"]
+    givers = {a["giver"] for a in assignments}
+    recipients = [a["recipient"] for a in assignments]
+    assert givers == names
+    assert set(recipients) == names  # every member is someone's recipient
+    assert len(recipients) == len(set(recipients))  # no one assigned twice
+    for a in assignments:
+        assert a["giver"] != a["recipient"]  # no one gets themselves
+
+    # Running it again is rejected — the draw only resolves once.
+    res = client.post(f"/club/polls/{poll['id']}/draw", headers=_auth(board))
+    assert res.status_code == 422
 
 
 def test_creating_a_new_poll_closes_the_previous_open_one(client, db, make_member):

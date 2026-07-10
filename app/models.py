@@ -315,6 +315,11 @@ class Poll(Base):
     options: Mapped[str] = mapped_column(Text)  # JSON-encoded list[str]
     status: Mapped[str] = mapped_column(String(10), default="open")  # open | closed
     winner: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # "draw" polls only: JSON-encoded list of [giver_name, recipient_name]
+    # pairs — a full derangement over every current club member, resolved
+    # once by /draw. Every member gets exactly one other member, nobody
+    # gets themselves, nobody is assigned twice.
+    assignments: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -385,6 +390,13 @@ class EventRsvp(Base):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     phone: Mapped[str] = mapped_column(String(20))
+    # "member" or one of the app's guest types (Prospective member /
+    # Visiting Rotarian / Friend & family) — same categories the in-app
+    # QR check-in already uses, so the register reads consistently either
+    # way someone showed up.
+    attendee_type: Mapped[str] = mapped_column(String(40), default="Guest")
+    # Only meaningful for Visiting Rotarian — which club they're from.
+    club_name: Mapped[str] = mapped_column(String(160), default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -102,6 +102,19 @@ def on_startup() -> None:
         conn.execute(
             text("ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_key TEXT")
         )
+        conn.execute(
+            text(
+                "ALTER TABLE event_rsvps ADD COLUMN IF NOT EXISTS "
+                "attendee_type VARCHAR(40) DEFAULT 'Guest'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE event_rsvps ADD COLUMN IF NOT EXISTS "
+                "club_name VARCHAR(160) DEFAULT ''"
+            )
+        )
+        conn.execute(text("ALTER TABLE polls ADD COLUMN IF NOT EXISTS assignments TEXT"))
     seed_bootstrap_data()
 
     with SessionLocal() as db:

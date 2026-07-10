@@ -369,6 +369,11 @@ class PollOptionResult(BaseModel):
     count: int
 
 
+class DrawAssignment(BaseModel):
+    giver: str
+    recipient: str
+
+
 class PollOut(BaseModel):
     id: int
     type: str
@@ -381,6 +386,7 @@ class PollOut(BaseModel):
     results: list[PollOptionResult]
     my_vote: str | None
     total_votes: int
+    assignments: list[DrawAssignment] | None = None
 
 
 class PollVoteCreate(BaseModel):

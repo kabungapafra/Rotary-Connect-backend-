@@ -29,6 +29,11 @@ def _poll_out(db: Session, poll: models.Poll, member: models.Member) -> schemas.
     for v in votes:
         counts[v.choice] = counts.get(v.choice, 0) + 1
     my_vote = next((v.choice for v in votes if v.member_id == member.id), None)
+    assignments = None
+    if poll.assignments:
+        assignments = [
+            schemas.DrawAssignment(giver=g, recipient=r) for g, r in json.loads(poll.assignments)
+        ]
     return schemas.PollOut(
         id=poll.id,
         type=poll.type,
@@ -41,7 +46,19 @@ def _poll_out(db: Session, poll: models.Poll, member: models.Member) -> schemas.
         results=[schemas.PollOptionResult(label=o, count=c) for o, c in counts.items()],
         my_vote=my_vote,
         total_votes=len(votes),
+        assignments=assignments,
     )
+
+
+def _generate_derangement(names: list[str]) -> list[str]:
+    """A random permutation of `names` where no one lands on their own
+    original position — i.e. nobody "gets" themselves. Rejection sampling:
+    reshuffle until that holds, which converges fast for any n >= 2."""
+    shuffled = names[:]
+    while True:
+        random.shuffle(shuffled)
+        if all(a != b for a, b in zip(names, shuffled)):
+            return shuffled
 
 
 @router.get("/active", response_model=schemas.PollOut | None)
@@ -85,14 +102,17 @@ def create_poll(
                 status_code=422, detail="An election needs at least 2 candidates"
             )
     else:  # draw
-        options = [o.strip() for o in payload.options if o.strip()]
-        if not options:
-            options = [
-                f"Rtn. {m.name}"
-                for m in db.query(models.Member).filter(models.Member.club_id == member.club_id)
-            ]
-        if not options:
-            raise HTTPException(status_code=422, detail="No members to draw from")
+        # Always every current club member — a fair "who gets whom" draw
+        # isn't meaningful over a hand-picked subset, so custom options
+        # aren't accepted here.
+        options = [
+            f"Rtn. {m.name}"
+            for m in db.query(models.Member).filter(models.Member.club_id == member.club_id)
+        ]
+        if len(options) < 2:
+            raise HTTPException(
+                status_code=422, detail="Need at least 2 club members for a draw"
+            )
 
     # Single-active-poll invariant: superseding a poll closes whatever the
     # club had open before.
@@ -160,8 +180,11 @@ def run_draw(
         raise HTTPException(status_code=422, detail="Not a random-draw poll")
     if poll.status != "open":
         raise HTTPException(status_code=422, detail="This draw has already run")
-    options = json.loads(poll.options)
-    poll.winner = random.choice(options)
+    names = json.loads(poll.options)
+    if len(names) < 2:
+        raise HTTPException(status_code=422, detail="Need at least 2 entrants for a draw")
+    recipients = _generate_derangement(names)
+    poll.assignments = json.dumps(list(zip(names, recipients)))
     poll.status = "closed"
     db.commit()
     db.refresh(poll)
