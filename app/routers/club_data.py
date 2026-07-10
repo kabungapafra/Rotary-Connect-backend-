@@ -1,7 +1,8 @@
+from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .. import models, schemas
 from ..database import get_db
@@ -261,14 +262,26 @@ def list_meetings(
         .limit(20)
         .all()
     )
-    out = []
-    for m in meetings:
+    # One query for every check-in across all 20 meetings (instead of one
+    # query per meeting), with the member eager-loaded via a JOIN so
+    # `r.member.name` below doesn't trigger a lazy-load per row either —
+    # collapses what used to be hundreds of queries into a single one.
+    meeting_ids = [m.id for m in meetings]
+    checkins_by_meeting: dict[int, list[models.CheckIn]] = defaultdict(list)
+    if meeting_ids:
         rows = (
             db.query(models.CheckIn)
-            .filter(models.CheckIn.meeting_id == m.id)
+            .filter(models.CheckIn.meeting_id.in_(meeting_ids))
+            .options(joinedload(models.CheckIn.member))
             .order_by(models.CheckIn.checked_in_at)
             .all()
         )
+        for row in rows:
+            checkins_by_meeting[row.meeting_id].append(row)
+
+    out = []
+    for m in meetings:
+        rows = checkins_by_meeting.get(m.id, [])
         out.append(
             schemas.MeetingOut(
                 date=m.date.strftime("%d %b %Y"),
