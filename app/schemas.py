@@ -196,12 +196,17 @@ class EventOut(BaseModel):
     dow: str
     name: str
     meta: str
+    image: str | None = None  # public R2 URL
 
 
 class EventCreate(BaseModel):
     dow: str = "WED"
     name: str
     meta: str = ""
+    # "data:image/...;base64,..." to set/replace the banner photo; the
+    # sentinel value "__remove__" clears it; omitted/None leaves it as-is
+    # on update (or unset on create).
+    image: str | None = None
 
 
 class ProjectOut(BaseModel):

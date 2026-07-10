@@ -29,18 +29,19 @@ if config.R2_ENABLED:
     )
 
 
-def upload_gallery_image(data_url: str, club_id: int) -> tuple[str, str]:
+def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -> tuple[str, str]:
     """Decode a "data:image/...;base64,..." URL, upload it to R2, and
     return (public_url, storage_key). Raises RuntimeError if R2 isn't
     configured — callers should treat that as a hard failure, not silently
-    drop the photo."""
+    drop the photo. `prefix` namespaces the object key by use (gallery
+    photos vs. event banners share this same bucket)."""
     if _client is None:
         raise RuntimeError("R2 storage is not configured")
     header, _, b64data = data_url.partition(",")
     content_type = header.removeprefix("data:").split(";")[0] or "image/jpeg"
     ext = content_type.split("/")[-1] or "jpg"
     raw = base64.b64decode(b64data)
-    key = f"gallery/{club_id}/{uuid.uuid4().hex}.{ext}"
+    key = f"{prefix}/{club_id}/{uuid.uuid4().hex}.{ext}"
     _client.put_object(
         Bucket=config.R2_BUCKET_NAME, Key=key, Body=raw, ContentType=content_type
     )

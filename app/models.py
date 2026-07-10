@@ -119,6 +119,10 @@ class Event(Base):
     dow: Mapped[str] = mapped_column(String(3), default="WED")
     name: Mapped[str] = mapped_column(String(160))
     meta: Mapped[str] = mapped_column(String(240), default="")
+    # Public R2 URL for the event's banner photo, same storage approach as
+    # gallery photos. Null until an image is uploaded.
+    image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

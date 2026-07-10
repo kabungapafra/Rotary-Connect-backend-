@@ -98,6 +98,10 @@ def on_startup() -> None:
         conn.execute(
             text("ALTER TABLE gallery_photos ADD COLUMN IF NOT EXISTS storage_key TEXT")
         )
+        conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT"))
+        conn.execute(
+            text("ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_key TEXT")
+        )
     seed_bootstrap_data()
 
     with SessionLocal() as db:

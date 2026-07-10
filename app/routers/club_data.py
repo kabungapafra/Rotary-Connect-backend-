@@ -14,8 +14,28 @@ from ..event_announcements import (
 )
 from ..security import get_current_member
 from ..sms import send_bulk_sms
+from ..storage import delete_gallery_image, upload_gallery_image
 from ..utils import get_or_create_meeting
 from .club_members import PRESIDENT_ROLES
+
+_REMOVE_IMAGE = "__remove__"
+
+
+def _apply_event_image(event: models.Event, image: str | None) -> None:
+    """Upload a new "data:image/...;base64,..." banner, clear it on the
+    `__remove__` sentinel, or leave it untouched when omitted — replacing
+    the old R2 object (if any) either way an image changes."""
+    if image is None:
+        return
+    if event.storage_key:
+        delete_gallery_image(event.storage_key)
+    if image == _REMOVE_IMAGE:
+        event.image = None
+        event.storage_key = None
+        return
+    url, key = upload_gallery_image(image, event.club_id, prefix="events")
+    event.image = url
+    event.storage_key = key
 
 router = APIRouter(prefix="/club", tags=["club"])
 
@@ -119,11 +139,14 @@ def create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
-    # Schedule the recurring "4 hours before" reminder. If the TIME &
-    # VENUE text has no parseable clock time, we can't compute that — fall
-    # back to one immediate announcement so the club still hears about it.
-    if not schedule_event_announcement(event):
-        background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
+    _apply_event_image(event, payload.image)
+    db.commit()
+    # Schedule the recurring "4 hours before" reminder (a no-op if the
+    # TIME & VENUE text has no parseable clock time), and always announce
+    # the new fellowship right away too — members shouldn't have to wait
+    # until 4 hours before the first occurrence to hear it exists.
+    schedule_event_announcement(event)
+    background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
     return event
 
 
@@ -141,6 +164,7 @@ def update_event(
     event.dow = payload.dow.strip().upper()[:3] or event.dow
     event.name = payload.name.strip() or event.name
     event.meta = payload.meta.strip()
+    _apply_event_image(event, payload.image)
     db.commit()
     db.refresh(event)
     # Day/time may have changed — reschedule the recurring reminder.
@@ -159,6 +183,8 @@ def delete_event(
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
     unschedule_event_announcement(event.id)
+    if event.storage_key:
+        delete_gallery_image(event.storage_key)
     db.delete(event)
     db.commit()
     return {"deleted": True}
