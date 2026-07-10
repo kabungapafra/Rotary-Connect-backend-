@@ -115,6 +115,10 @@ def on_startup() -> None:
             )
         )
         conn.execute(text("ALTER TABLE polls ADD COLUMN IF NOT EXISTS assignments TEXT"))
+        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS image TEXT"))
+        conn.execute(
+            text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_key TEXT")
+        )
     seed_bootstrap_data()
 
     with SessionLocal() as db:

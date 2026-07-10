@@ -138,6 +138,10 @@ class Project(Base):
     pct: Mapped[int] = mapped_column(Integer, default=0)
     desc: Mapped[str] = mapped_column(String(500), default="")
     deadline: Mapped[str] = mapped_column(String(40), default="")
+    # Public R2 URL for the project's photo, same storage approach as
+    # gallery/event photos. Null until an image is uploaded.
+    image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

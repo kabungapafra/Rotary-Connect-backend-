@@ -21,21 +21,23 @@ from .club_members import PRESIDENT_ROLES
 _REMOVE_IMAGE = "__remove__"
 
 
-def _apply_event_image(event: models.Event, image: str | None) -> None:
-    """Upload a new "data:image/...;base64,..." banner, clear it on the
+def _apply_r2_image(obj: "models.Event | models.Project", image: str | None, prefix: str) -> None:
+    """Upload a new "data:image/...;base64,..." photo, clear it on the
     `__remove__` sentinel, or leave it untouched when omitted — replacing
-    the old R2 object (if any) either way an image changes."""
+    the old R2 object (if any) either way an image changes. Shared by
+    events (banner) and projects (photo), same storage approach as the
+    gallery."""
     if image is None:
         return
-    if event.storage_key:
-        delete_gallery_image(event.storage_key)
+    if obj.storage_key:
+        delete_gallery_image(obj.storage_key)
     if image == _REMOVE_IMAGE:
-        event.image = None
-        event.storage_key = None
+        obj.image = None
+        obj.storage_key = None
         return
-    url, key = upload_gallery_image(image, event.club_id, prefix="events")
-    event.image = url
-    event.storage_key = key
+    url, key = upload_gallery_image(image, obj.club_id, prefix=prefix)
+    obj.image = url
+    obj.storage_key = key
 
 router = APIRouter(prefix="/club", tags=["club"])
 
@@ -139,14 +141,14 @@ def create_event(
     db.add(event)
     db.commit()
     db.refresh(event)
-    _apply_event_image(event, payload.image)
+    _apply_r2_image(event, payload.image, prefix="events")
     db.commit()
-    # Schedule the recurring "4 hours before" reminder (a no-op if the
-    # TIME & VENUE text has no parseable clock time), and always announce
-    # the new fellowship right away too — members shouldn't have to wait
-    # until 4 hours before the first occurrence to hear it exists.
-    schedule_event_announcement(event)
-    background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
+    # Schedule the recurring "4 hours before" reminder + "1 hour after"
+    # thank-you. If the TIME & VENUE text has no parseable clock time, we
+    # can't compute either offset — fall back to one immediate
+    # announcement so the club still hears about it.
+    if not schedule_event_announcement(event):
+        background_tasks.add_task(_announce_new_event, member.club_id, event.name, event.meta)
     return event
 
 
@@ -164,7 +166,7 @@ def update_event(
     event.dow = payload.dow.strip().upper()[:3] or event.dow
     event.name = payload.name.strip() or event.name
     event.meta = payload.meta.strip()
-    _apply_event_image(event, payload.image)
+    _apply_r2_image(event, payload.image, prefix="events")
     db.commit()
     db.refresh(event)
     # Day/time may have changed — reschedule the recurring reminder.
@@ -225,6 +227,8 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+    _apply_r2_image(project, payload.image, prefix="projects")
+    db.commit()
     return project
 
 
@@ -244,6 +248,7 @@ def update_project(
     project.pct = max(0, min(100, payload.pct))
     project.desc = payload.desc.strip()
     project.deadline = payload.deadline.strip()
+    _apply_r2_image(project, payload.image, prefix="projects")
     db.commit()
     db.refresh(project)
     return project
@@ -259,6 +264,8 @@ def delete_project(
     project = db.get(models.Project, project_id)
     if project is None or project.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Project not found")
+    if project.storage_key:
+        delete_gallery_image(project.storage_key)
     db.delete(project)
     db.commit()
     return {"deleted": True}

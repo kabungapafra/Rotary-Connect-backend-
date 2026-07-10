@@ -6,7 +6,12 @@ reminded) at the wrong time.
 
 from datetime import datetime, timezone
 
-from app.event_announcements import next_occurrence_utc, parse_event_time, venue_from_meta
+from app.event_announcements import (
+    _shifted_cron,
+    next_occurrence_utc,
+    parse_event_time,
+    venue_from_meta,
+)
 
 
 def test_parse_event_time_variants():
@@ -46,3 +51,29 @@ def test_next_occurrence_finds_a_different_weekday():
     now = datetime(2026, 7, 9, 12, 0, tzinfo=timezone.utc)  # Thursday
     result = next_occurrence_utc("MON", 15, 0, now=now)
     assert result.date().isoformat() == "2026-07-13"  # the following Monday
+
+
+def test_reminder_fires_4_hours_before_the_local_event_time():
+    # WED 6:00 PM EAT (Africa/Kampala, UTC+3) = WED 15:00 UTC; 4 hours
+    # before that is still the same UTC day.
+    dow, hour, minute = _shifted_cron("WED", 18, 0, -4)
+    assert (dow, hour, minute) == ("wed", 11, 0)
+
+
+def test_thank_you_fires_1_hour_after_the_local_event_time():
+    dow, hour, minute = _shifted_cron("WED", 18, 0, 1)
+    assert (dow, hour, minute) == ("wed", 16, 0)
+
+
+def test_reminder_rolls_the_weekday_back_across_midnight():
+    # MON 1:00 AM EAT is SUN 22:00 UTC the day before; 4 hours before that
+    # local time must land on SUN in UTC terms, not MON.
+    dow, hour, minute = _shifted_cron("MON", 1, 0, -4)
+    assert dow == "sun"
+
+
+def test_thank_you_stays_on_the_same_utc_day_even_when_local_day_rolls_over():
+    # FRI 11:30 PM EAT rolling into SAT locally an hour later is still
+    # FRI in UTC (Kampala is ahead of UTC).
+    dow, hour, minute = _shifted_cron("FRI", 23, 30, 1)
+    assert dow == "fri"

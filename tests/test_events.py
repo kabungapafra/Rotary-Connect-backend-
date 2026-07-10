@@ -1,6 +1,5 @@
 """Event banner photos persist to real storage (R2), unlike the client-only
-state that used to silently vanish on the next reload. Creating an event
-also announces it immediately, not only via the 4-hours-before reminder."""
+state that used to silently vanish on the next reload."""
 
 from app import models, security
 from app.storage import delete_gallery_image

@@ -218,6 +218,7 @@ class ProjectOut(BaseModel):
     pct: int
     desc: str
     deadline: str
+    image: str | None = None  # public R2 URL
 
 
 class ProjectCreate(BaseModel):
@@ -226,6 +227,9 @@ class ProjectCreate(BaseModel):
     pct: int = 0
     desc: str = ""
     deadline: str = ""
+    # "data:image/...;base64,..." to set/replace the photo; "__remove__"
+    # clears it; omitted/None leaves it as-is on update (or unset on create).
+    image: str | None = None
 
 
 class MeetingAttendee(BaseModel):

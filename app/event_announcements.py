@@ -1,20 +1,20 @@
-"""Fellowship reminder SMS, sent 4 hours before each weekly event.
+"""Event SMS: a reminder 4 hours before each weekly fellowship, and a
+thank-you 1 hour after it to whoever checked in.
 
 Events only carry a day-of-week (`dow`) plus a free-text "TIME & VENUE"
 field (`meta`, e.g. "6:00 PM - Mbalwa Gardens Hall") — there's no separate
 structured time column. We parse a clock time out of the front of `meta`
-and use it to schedule a *recurring* cron job (one per event) that fires
-4 hours before that time every week, in Africa/Kampala's fixed UTC+3 (no
-DST, so a static offset is safe).
+and use it to schedule two *recurring* cron jobs (one pair per event) in
+Africa/Kampala's fixed UTC+3 (no DST, so a static offset is safe).
 
-If `meta` has no parseable time, we can't compute "4 hours before" at all
+If `meta` has no parseable time, we can't compute either offset at all
 — the caller falls back to an immediate one-off announcement instead of
 silently never notifying the club.
 """
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from apscheduler.jobstores.base import JobLookupError
 from sqlalchemy.orm import Session
@@ -28,6 +28,7 @@ logger = logging.getLogger("rotary.event_announcements")
 
 _EAT_OFFSET_HOURS = 3  # Africa/Kampala is a fixed UTC+3, year-round.
 _REMINDER_LEAD_HOURS = 4
+_THANK_YOU_LAG_HOURS = 1
 
 _DOW_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 _APS_DOW = {d: d.lower() for d in _DOW_ORDER}
@@ -91,13 +92,15 @@ def next_occurrence_utc(
     return candidate
 
 
-def _reminder_utc(dow: str, local_hour: int, local_minute: int) -> tuple[str, int, int]:
-    """Local event time -> (apscheduler day_of_week, UTC hour, UTC minute)
-    for a job firing `_REMINDER_LEAD_HOURS` before the event, correctly
-    rolling the day-of-week backward if that crosses midnight."""
+def _shifted_cron(
+    dow: str, local_hour: int, local_minute: int, shift_hours: int
+) -> tuple[str, int, int]:
+    """Local event time, shifted by `shift_hours` (negative = before,
+    positive = after) -> (apscheduler day_of_week, UTC hour, UTC minute),
+    correctly rolling the day-of-week if the shift crosses midnight."""
     idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
     total_minutes = local_hour * 60 + local_minute
-    total_minutes -= (_EAT_OFFSET_HOURS + _REMINDER_LEAD_HOURS) * 60
+    total_minutes += (shift_hours - _EAT_OFFSET_HOURS) * 60
     day_shift = 0
     while total_minutes < 0:
         total_minutes += 24 * 60
@@ -110,8 +113,12 @@ def _reminder_utc(dow: str, local_hour: int, local_minute: int) -> tuple[str, in
     return _APS_DOW[_DOW_ORDER[idx]], hour, minute
 
 
-def _job_id(event_id: int) -> str:
+def _reminder_job_id(event_id: int) -> str:
     return f"event_announce_{event_id}"
+
+
+def _thank_you_job_id(event_id: int) -> str:
+    return f"event_thank_you_{event_id}"
 
 
 def _send_event_reminder(event_id: int) -> None:
@@ -139,9 +146,42 @@ def _send_event_reminder(event_id: int) -> None:
         db.close()
 
 
+def _send_event_thank_you(event_id: int) -> None:
+    """Fires `_THANK_YOU_LAG_HOURS` after the event's scheduled start —
+    thanks whoever actually checked in to today's meeting, not the whole
+    club (unlike the reminder, which goes out to everyone beforehand)."""
+    db = SessionLocal()
+    try:
+        event = db.get(models.Event, event_id)
+        if event is None:
+            return
+        club = db.get(models.Club, event.club_id)
+        if club is None:
+            return
+        meeting = (
+            db.query(models.Meeting)
+            .filter(models.Meeting.club_id == event.club_id, models.Meeting.date == date.today())
+            .first()
+        )
+        if meeting is None:
+            return
+        phones = [
+            row.member.phone
+            for row in db.query(models.CheckIn).filter(models.CheckIn.meeting_id == meeting.id)
+            if row.member.phone
+        ]
+        if not phones:
+            return
+        text = f"🙏 Thank you for coming to {event.name} today! See you next time — {club.name}"
+        send_bulk_sms(phones, text)
+    finally:
+        db.close()
+
+
 def schedule_event_announcement(event: models.Event) -> bool:
-    """(Re)schedule the recurring reminder for one event. Returns False
-    (and unschedules any existing job) if `meta` has no parseable time."""
+    """(Re)schedule the recurring reminder + thank-you pair for one event.
+    Returns False (and unschedules any existing jobs) if `meta` has no
+    parseable time."""
     parsed = parse_event_time(event.meta)
     if parsed is None:
         unschedule_event_announcement(event.id)
@@ -150,25 +190,41 @@ def schedule_event_announcement(event: models.Event) -> bool:
             event.id, event.name, event.meta,
         )
         return False
-    aps_dow, utc_hour, utc_minute = _reminder_utc(event.dow, *parsed)
+    reminder_dow, reminder_hour, reminder_minute = _shifted_cron(
+        event.dow, *parsed, -_REMINDER_LEAD_HOURS
+    )
     scheduler.add_job(
         _send_event_reminder,
         "cron",
-        day_of_week=aps_dow,
-        hour=utc_hour,
-        minute=utc_minute,
+        day_of_week=reminder_dow,
+        hour=reminder_hour,
+        minute=reminder_minute,
         args=[event.id],
-        id=_job_id(event.id),
+        id=_reminder_job_id(event.id),
+        replace_existing=True,
+    )
+    thanks_dow, thanks_hour, thanks_minute = _shifted_cron(
+        event.dow, *parsed, _THANK_YOU_LAG_HOURS
+    )
+    scheduler.add_job(
+        _send_event_thank_you,
+        "cron",
+        day_of_week=thanks_dow,
+        hour=thanks_hour,
+        minute=thanks_minute,
+        args=[event.id],
+        id=_thank_you_job_id(event.id),
         replace_existing=True,
     )
     return True
 
 
 def unschedule_event_announcement(event_id: int) -> None:
-    try:
-        scheduler.remove_job(_job_id(event_id))
-    except JobLookupError:
-        pass
+    for job_id in (_reminder_job_id(event_id), _thank_you_job_id(event_id)):
+        try:
+            scheduler.remove_job(job_id)
+        except JobLookupError:
+            pass
 
 
 def reschedule_all_event_announcements(db: Session) -> None:
