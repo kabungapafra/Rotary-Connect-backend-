@@ -33,6 +33,9 @@ class Club(Base):
     district: Mapped[str] = mapped_column(String(20), default="")
     location: Mapped[str] = mapped_column(String(160), default="")
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
+    # "rotary" | "rotaract" — drives club-facing app branding (wordmark text,
+    # accent color, wheel logo tint).
+    club_type: Mapped[str] = mapped_column(String(20), default="rotary")
     # Club logo as a data URL (e.g. "data:image/png;base64,..."), uploaded by
     # the system admin at onboarding. Kept in the DB rather than on disk since
     # the deploy targets (Render free tier) have no persistent filesystem.

@@ -90,6 +90,12 @@ def on_startup() -> None:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo TEXT"))
         conn.execute(
+            text(
+                "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS "
+                "club_type VARCHAR(20) DEFAULT 'rotary'"
+            )
+        )
+        conn.execute(
             text("ALTER TABLE members ADD COLUMN IF NOT EXISTS last_birthday_wished DATE")
         )
         conn.execute(

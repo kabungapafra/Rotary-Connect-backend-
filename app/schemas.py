@@ -32,6 +32,7 @@ class LoginResponse(BaseModel):
     club_id: int
     club_name: str
     club_logo: str | None = None
+    club_type: str = "rotary"
 
 
 class GuestCheckInRequest(BaseModel):
@@ -101,6 +102,7 @@ class ClubOut(BaseModel):
     district: str
     location: str
     status: str
+    club_type: str = "rotary"
     members_count: int
     fee_amount: int
     last_paid_date: str | None
@@ -114,6 +116,7 @@ class ClubCreate(BaseModel):
     name: str
     district: str = ""
     location: str = ""
+    club_type: str = "rotary"
     members_count: int = 10
     fee_amount: int = 0
     first_payment_date: str | None = None
