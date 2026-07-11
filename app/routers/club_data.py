@@ -13,6 +13,7 @@ from ..event_announcements import (
     unschedule_event_announcement,
     venue_from_meta,
 )
+from ..push import send_bulk_push, tokens_for_club
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_gallery_image
 from ..utils import get_or_create_meeting, is_club_access_blocked
@@ -121,11 +122,19 @@ def create_event(
     _apply_r2_image(event, payload.image, prefix="events")
     db.commit()
     # Schedule the recurring "4 hours before" reminder + "1 hour after"
-    # thank-you — the only two SMS this ever sends for an event. If the
-    # TIME & VENUE text has no parseable clock time, neither offset can be
-    # computed, so no reminder is scheduled at all (never an immediate
-    # announcement as a fallback).
+    # thank-you SMS. If the TIME & VENUE text has no parseable clock time,
+    # neither offset can be computed, so no reminder is scheduled at all
+    # (never an immediate announcement as a fallback).
     schedule_event_announcement(event)
+    # Push, unlike the SMS reminder pair above, fires once immediately —
+    # members get an in-app nudge that a new fellowship was posted, on top
+    # of (not instead of) the recurring pre-meeting reminder.
+    send_bulk_push(
+        tokens_for_club(db, event.club_id),
+        "New event posted",
+        f"{event.name}" + (f" — {event.meta.strip()}" if event.meta.strip() else ""),
+        data={"type": "event", "event_id": str(event.id)},
+    )
     return event
 
 

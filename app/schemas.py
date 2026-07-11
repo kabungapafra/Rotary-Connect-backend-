@@ -8,6 +8,11 @@ class LoginRequest(BaseModel):
     pin: str
 
 
+class RegisterPushToken(BaseModel):
+    token: str
+    platform: str  # ios | android
+
+
 class MemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

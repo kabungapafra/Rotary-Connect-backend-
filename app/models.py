@@ -85,6 +85,10 @@ class Member(Base):
     # check idempotent so it's safe to run from multiple trigger points
     # (daily sweep, login, check-in) without double-sending.
     last_birthday_wished: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Dues period label (e.g. "2026-Q3") this member was last sent a push
+    # reminder for — same idempotency trick as last_birthday_wished, so the
+    # weekly sweep can run as often as it likes without repeat-nagging.
+    last_dues_reminded: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -207,6 +211,26 @@ class SmsLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class DeviceToken(Base):
+    """One row per device a member has logged into — an FCM registration
+    token to push notifications to. A member can have several (phone +
+    tablet); a token is unique to one device, so re-registering the same
+    token (app reinstall, token refresh) just moves it to whoever's
+    currently signed in there rather than creating a duplicate row."""
+
+    __tablename__ = "device_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"), index=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True)
+    platform: Mapped[str] = mapped_column(String(10))  # ios | android
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    member: Mapped["Member"] = relationship()
 
 
 class GalleryPhoto(Base):

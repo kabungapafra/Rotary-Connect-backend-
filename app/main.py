@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from .birthdays import run_daily_sweep
 from .database import Base, SessionLocal, engine
+from .dues_reminders import run_sweep as run_dues_reminder_sweep
 from .event_announcements import reschedule_all_event_announcements
 from .routers import (
     admin_analytics,
@@ -20,6 +21,7 @@ from .routers import (
     event_registration,
     gallery,
     polls,
+    push,
     secretary,
     treasury,
 )
@@ -58,6 +60,7 @@ app.include_router(gallery.router)
 app.include_router(event_registration.router)
 app.include_router(treasury.router)
 app.include_router(polls.router)
+app.include_router(push.router)
 app.include_router(secretary.router)
 
 
@@ -81,6 +84,16 @@ def _run_thank_you_sweep_job() -> None:
         db.close()
 
 
+def _run_dues_reminder_sweep_job() -> None:
+    db = SessionLocal()
+    try:
+        run_dues_reminder_sweep(db)
+    except Exception:
+        logger.exception("Dues reminder sweep failed")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     # No Alembic yet — create_all is enough for the current MVP stage, plus
@@ -97,6 +110,12 @@ def on_startup() -> None:
         )
         conn.execute(
             text("ALTER TABLE members ADD COLUMN IF NOT EXISTS last_birthday_wished DATE")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE members ADD COLUMN IF NOT EXISTS "
+                "last_dues_reminded VARCHAR(20)"
+            )
         )
         conn.execute(
             text("ALTER TABLE guest_visits ADD COLUMN IF NOT EXISTS thanked_at TIMESTAMPTZ")
@@ -139,9 +158,18 @@ def on_startup() -> None:
     # Thank-you sweep: guests are thanked 2 hours after check-in, so this
     # just needs to run often enough that nobody waits much past that.
     scheduler.add_job(_run_thank_you_sweep_job, "interval", minutes=15, id="thank_you_sweep", replace_existing=True)
+    # Dues reminder: once a week (Monday 8am Africa/Kampala -> 05:00 UTC)
+    # is plenty — last_dues_reminded already makes repeat runs a no-op for
+    # anyone already reminded this period.
+    scheduler.add_job(
+        _run_dues_reminder_sweep_job, "cron",
+        day_of_week="mon", hour=5, minute=0,
+        id="dues_reminder_sweep", replace_existing=True,
+    )
     scheduler.start()
     _run_birthday_sweep_job()
     _run_thank_you_sweep_job()
+    _run_dues_reminder_sweep_job()
 
     with SessionLocal() as db:
         reschedule_all_event_announcements(db)

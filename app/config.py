@@ -41,3 +41,11 @@ R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "rotary-connect-gallery")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
 R2_ENDPOINT_URL = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com" if R2_ACCOUNT_ID else ""
 R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_PUBLIC_URL)
+
+# Firebase Cloud Messaging (push notifications). FIREBASE_CREDENTIALS_JSON
+# holds the *contents* of a Firebase service account key (Project settings >
+# Service accounts > Generate new private key) — a whole JSON blob in one
+# env var, same reasoning as everything else here: sending is skipped (not
+# errored) when unconfigured, so local dev never needs a live project.
+FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
+PUSH_ENABLED = bool(FIREBASE_CREDENTIALS_JSON)

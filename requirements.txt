@@ -10,4 +10,5 @@ apscheduler
 qrcode[pil]
 python-multipart
 boto3
+firebase-admin
 pytest

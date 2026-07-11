@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from . import models
 from .database import SessionLocal
+from .push import send_bulk_push, tokens_for_club
 from .scheduler import scheduler
 from .sms import send_bulk_sms
 
@@ -142,6 +143,13 @@ def _send_event_reminder(event_id: int) -> None:
             text += f" — {event.meta.strip()}"
         text += f" starts in {_REMINDER_LEAD_HOURS} hours. See you there! — {club.name}"
         send_bulk_sms(phones, text)
+        send_bulk_push(
+            tokens_for_club(db, event.club_id),
+            f"📅 {event.name}",
+            f"Starts in {_REMINDER_LEAD_HOURS} hours"
+            + (f" — {event.meta.strip()}" if event.meta.strip() else ""),
+            data={"type": "event", "event_id": str(event.id)},
+        )
     finally:
         db.close()
 
@@ -165,15 +173,26 @@ def _send_event_thank_you(event_id: int) -> None:
         )
         if meeting is None:
             return
-        phones = [
-            row.member.phone
-            for row in db.query(models.CheckIn).filter(models.CheckIn.meeting_id == meeting.id)
-            if row.member.phone
-        ]
-        if not phones:
+        checkins = db.query(models.CheckIn).filter(
+            models.CheckIn.meeting_id == meeting.id
+        ).all()
+        if not checkins:
             return
+        phones = [c.member.phone for c in checkins if c.member.phone]
         text = f"🙏 Thank you for coming to {event.name} today! See you next time — {club.name}"
         send_bulk_sms(phones, text)
+        tokens = [
+            row.token
+            for row in db.query(models.DeviceToken).filter(
+                models.DeviceToken.member_id.in_([c.member_id for c in checkins])
+            )
+        ]
+        send_bulk_push(
+            tokens,
+            "🙏 Thanks for coming!",
+            f"See you next time at {event.name} — {club.name}",
+            data={"type": "event", "event_id": str(event.id)},
+        )
     finally:
         db.close()
 
