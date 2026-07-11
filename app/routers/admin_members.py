@@ -83,8 +83,40 @@ def reset_password(member_id: int, background_tasks: BackgroundTasks, db: Sessio
 
 @router.delete("/{member_id}")
 def delete_member(member_id: int, db: Session = Depends(get_db)):
+    """Same FK-cleanup gap as delete_club (see its docstring) — a member
+    who ever voted, recorded a transaction, wrote up minutes, etc. would
+    otherwise trip a Postgres FK violation on the final delete."""
     member = _get_or_404(db, member_id)
     db.query(models.CheckIn).filter(models.CheckIn.member_id == member_id).delete(
+        synchronize_session=False
+    )
+    poll_ids = [p.id for p in db.query(models.Poll).filter(models.Poll.created_by == member_id)]
+    if poll_ids:
+        db.query(models.PollVote).filter(models.PollVote.poll_id.in_(poll_ids)).delete(
+            synchronize_session=False
+        )
+    db.query(models.PollVote).filter(models.PollVote.member_id == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Poll).filter(models.Poll.created_by == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.GalleryPhoto).filter(models.GalleryPhoto.uploaded_by == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Apology).filter(models.Apology.member_id == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Transaction).filter(models.Transaction.created_by == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.DuesPayment).filter(models.DuesPayment.member_id == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Minute).filter(models.Minute.created_by == member_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Milestone).filter(models.Milestone.created_by == member_id).delete(
         synchronize_session=False
     )
     db.delete(member)

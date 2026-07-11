@@ -43,28 +43,34 @@ def test_club(db):
     db.add(club)
     db.commit()
     db.refresh(club)
+    club_id = club.id
     yield club
     # Tests hit real endpoints that create rows (events, ...) beyond what
     # the make_* fixtures below track — clear anything left over for this
     # club before deleting it, or the FK constraint trips. Rows that carry
     # a member_id/created_by FK are cleaned up in make_member's own
     # teardown instead, since that runs (and deletes the members) before
-    # this one does.
+    # this one does. Uses club_id (captured above) rather than club.id — a
+    # test may have deleted the club itself (e.g. via DELETE /admin/clubs),
+    # and re-reading an attribute off that now-expired, gone row raises
+    # ObjectDeletedError instead of just telling us it's gone.
     db.query(models.ClubDuesSetting).filter(
-        models.ClubDuesSetting.club_id == club.id
+        models.ClubDuesSetting.club_id == club_id
     ).delete()
-    db.query(models.Event).filter(models.Event.club_id == club.id).delete()
-    db.query(models.Member).filter(models.Member.club_id == club.id).delete()
+    db.query(models.Event).filter(models.Event.club_id == club_id).delete()
+    db.query(models.Member).filter(models.Member.club_id == club_id).delete()
     db.commit()
-    db.delete(club)
-    db.commit()
+    row = db.get(models.Club, club_id)
+    if row:
+        db.delete(row)
+        db.commit()
 
 
 @pytest.fixture()
 def make_member(db, test_club):
     """Factory fixture: make_member(role="President", suffix="001", pin="1234")
     creates a member in test_club and cleans it up after the test."""
-    created = []
+    created_ids = []
 
     def _make(role="Member", suffix="001", pin="1234", is_board=False, name="Pytest Member"):
         member = models.Member(
@@ -82,14 +88,18 @@ def make_member(db, test_club):
         db.add(member)
         db.commit()
         db.refresh(member)
-        created.append(member)
+        # Capture the id now rather than re-reading member.id at teardown —
+        # a test may delete the member itself (e.g. via DELETE
+        # /admin/members), at which point that attribute access would
+        # raise ObjectDeletedError on the now-expired, gone row.
+        created_ids.append(member.id)
         return member
 
     yield _make
     # Rows a test created that reference these members (votes, apologies,
     # dues payments, minutes/milestones authored by them, transactions they
     # recorded) must go first, or deleting the member trips the FK.
-    member_ids = [m.id for m in created]
+    member_ids = created_ids
     if member_ids:
         poll_ids = [
             p.id for p in db.query(models.Poll).filter(models.Poll.created_by.in_(member_ids))
@@ -119,8 +129,12 @@ def make_member(db, test_club):
         db.query(models.Milestone).filter(models.Milestone.created_by.in_(member_ids)).delete(
             synchronize_session=False
         )
-    for member in created:
-        db.delete(member)
+    for member_id in created_ids:
+        # A test may have deleted the member itself (e.g. via DELETE
+        # /admin/members) — nothing left to do then.
+        row = db.get(models.Member, member_id)
+        if row:
+            db.delete(row)
     db.commit()
 
 

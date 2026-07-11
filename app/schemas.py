@@ -33,6 +33,7 @@ class LoginResponse(BaseModel):
     club_name: str
     club_logo: str | None = None
     club_type: str = "rotary"
+    club_status: str = "active"
 
 
 class GuestCheckInRequest(BaseModel):
@@ -255,6 +256,7 @@ class MemberSummaryOut(BaseModel):
     attendance_percent: int
     today_meeting_name: str
     member_count: int
+    club_status: str = "active"
 
 
 # ── club-level member management (Club President only) ─────────────────

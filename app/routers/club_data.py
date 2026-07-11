@@ -327,6 +327,7 @@ def my_summary(
         attendance_percent=min(100, attendance),
         today_meeting_name=today_meeting.name if today_meeting else "Weekly Fellowship Meeting",
         member_count=member_count,
+        club_status=member.club.status,
     )
 
 

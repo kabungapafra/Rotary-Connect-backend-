@@ -141,8 +141,11 @@ def record_payment(club_id: int, payload: schemas.PaymentRecord, db: Session = D
 
 @router.delete("/{club_id}")
 def delete_club(club_id: int, db: Session = Depends(get_db)):
-    """Remove a club and everything belonging to it (members, meetings,
-    check-ins, events, projects, guest visits)."""
+    """Remove a club and everything belonging to it. Every table with a
+    non-nullable FK into clubs/members (added over time as features grew:
+    polls, dues, transactions, minutes, milestones, gallery, apologies,
+    RSVPs) has to be cleared first or the final delete trips a Postgres
+    FK violation — see the equivalent cleanup in tests/conftest.py."""
     club = _get_or_404(db, club_id)
     meeting_ids = [
         m.id for m in db.query(models.Meeting).filter(models.Meeting.club_id == club_id)
@@ -154,7 +157,39 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
         db.query(models.Meeting).filter(models.Meeting.id.in_(meeting_ids)).delete(
             synchronize_session=False
         )
+    event_ids = [e.id for e in db.query(models.Event).filter(models.Event.club_id == club_id)]
+    if event_ids:
+        db.query(models.EventRsvp).filter(models.EventRsvp.event_id.in_(event_ids)).delete(
+            synchronize_session=False
+        )
+    poll_ids = [p.id for p in db.query(models.Poll).filter(models.Poll.club_id == club_id)]
+    if poll_ids:
+        db.query(models.PollVote).filter(models.PollVote.poll_id.in_(poll_ids)).delete(
+            synchronize_session=False
+        )
     db.query(models.GuestVisit).filter(models.GuestVisit.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.GalleryPhoto).filter(models.GalleryPhoto.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Apology).filter(models.Apology.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.DuesPayment).filter(models.DuesPayment.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Transaction).filter(models.Transaction.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Poll).filter(models.Poll.club_id == club_id).delete(synchronize_session=False)
+    db.query(models.Minute).filter(models.Minute.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Milestone).filter(models.Milestone.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.ClubDuesSetting).filter(models.ClubDuesSetting.club_id == club_id).delete(
         synchronize_session=False
     )
     db.query(models.Member).filter(models.Member.club_id == club_id).delete(

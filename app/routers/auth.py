@@ -62,4 +62,5 @@ def login(
         club_name=member.club.name,
         club_logo=member.club.logo,
         club_type=member.club.club_type,
+        club_status=member.club.status,
     )
