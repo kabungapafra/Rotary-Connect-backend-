@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import func
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..birthdays import wish_if_due
 from ..database import get_db
+from ..event_announcements import local_time_on_date_utc, parse_event_time
 from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
@@ -16,6 +17,46 @@ from ..utils import get_or_create_meeting
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 
 DEFAULT_MEETING_NAME = "Weekly Fellowship Meeting"
+
+# Check-in is only allowed in a window around today's scheduled event time —
+# early enough to be useful at the door, but not open all day.
+_CHECKIN_LEAD_MINUTES = 15
+_CHECKIN_WINDOW_MINUTES = 60
+
+
+def _check_in_window_error(club_id: int, db: Session) -> str | None:
+    """None if check-in is currently allowed. Otherwise the message to show.
+
+    Only enforced when at least one of today's events has a parseable time
+    — a club with no schedulable event today (or an unparseable TIME &
+    VENUE field) falls back to the old "any time" behavior rather than
+    blocking check-in on data the schedule can't account for."""
+    today = date.today()
+    todays_dow = today.strftime("%a").upper()
+    todays_events = (
+        db.query(models.Event)
+        .filter(models.Event.club_id == club_id, models.Event.dow == todays_dow)
+        .all()
+    )
+    now = datetime.now(timezone.utc)
+    checked_any = False
+    for event in todays_events:
+        parsed = parse_event_time(event.meta)
+        if parsed is None:
+            continue
+        checked_any = True
+        start = local_time_on_date_utc(*parsed, today)
+        if start - timedelta(minutes=_CHECKIN_LEAD_MINUTES) <= now <= start + timedelta(
+            minutes=_CHECKIN_WINDOW_MINUTES
+        ):
+            return None
+    if not checked_any:
+        return None
+    return (
+        f"Check-in opens {_CHECKIN_LEAD_MINUTES} minutes before the meeting "
+        f"and closes {_CHECKIN_WINDOW_MINUTES // 60} hour after it starts."
+    )
+
 
 # Per-IP throttle for the unauthenticated guest endpoint — the per-phone
 # daily dedup below stops repeat SMS to one number, this stops someone from
@@ -50,6 +91,10 @@ def check_in(
             checked_in_at=existing.checked_in_at,
             meeting_name=meeting.name,
         )
+
+    window_error = _check_in_window_error(member.club_id, db)
+    if window_error is not None:
+        raise HTTPException(status_code=422, detail=window_error)
 
     row = models.CheckIn(member_id=member.id, meeting_id=meeting.id)
     db.add(row)

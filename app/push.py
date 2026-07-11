@@ -95,12 +95,15 @@ def send_bulk_push(
 
 
 def tokens_for_club(db, club_id: int) -> list[str]:
-    """Every registered device token belonging to a member of this club —
-    the push equivalent of sms.py callers collecting member.phone lists."""
+    """Every registered device token belonging to an active member of this
+    club — the push equivalent of sms.py callers collecting member.phone
+    lists. Excludes suspended members; their local session is wiped on
+    their next rejected request, but their device token row otherwise
+    lingers and would keep getting club-wide pushes forever."""
     return [
         row.token
         for row in db.query(models.DeviceToken)
         .join(models.Member, models.DeviceToken.member_id == models.Member.id)
-        .filter(models.Member.club_id == club_id)
+        .filter(models.Member.club_id == club_id, models.Member.status == "active")
         .all()
     ]

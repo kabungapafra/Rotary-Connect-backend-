@@ -262,6 +262,7 @@ class MemberSummaryOut(BaseModel):
     today_meeting_name: str
     member_count: int
     club_status: str = "active"
+    checked_in_today: bool = False
 
 
 # ── club-level member management (Club President only) ─────────────────

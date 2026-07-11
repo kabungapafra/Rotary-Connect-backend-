@@ -55,7 +55,8 @@ def run_sweep(db: Session) -> int:
     for setting in db.query(models.ClubDuesSetting).all():
         period_label = current_period_label(setting.period)
         members = db.query(models.Member).filter(
-            models.Member.club_id == setting.club_id
+            models.Member.club_id == setting.club_id,
+            models.Member.status == "active",
         ).all()
         for member in members:
             before = member.last_dues_reminded

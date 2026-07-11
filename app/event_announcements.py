@@ -93,6 +93,26 @@ def next_occurrence_utc(
     return candidate
 
 
+def local_time_on_date_utc(local_hour: int, local_minute: int, on_date: date) -> datetime:
+    """The absolute UTC instant `local_hour:local_minute` (Africa/Kampala)
+    falls on for a specific calendar date — unlike next_occurrence_utc,
+    this doesn't search for the next future occurrence, since the caller
+    (check-in's time-window gate) already knows which date it's checking."""
+    utc_hour = local_hour - _EAT_OFFSET_HOURS
+    day_shift = 0
+    while utc_hour < 0:
+        utc_hour += 24
+        day_shift -= 1
+    while utc_hour >= 24:
+        utc_hour -= 24
+        day_shift += 1
+    target_date = on_date + timedelta(days=day_shift)
+    return datetime(
+        target_date.year, target_date.month, target_date.day,
+        utc_hour, local_minute, tzinfo=timezone.utc,
+    )
+
+
 def _shifted_cron(
     dow: str, local_hour: int, local_minute: int, shift_hours: int
 ) -> tuple[str, int, int]:

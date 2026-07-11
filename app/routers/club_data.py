@@ -330,6 +330,15 @@ def my_summary(
     member_count = (
         db.query(models.Member).filter(models.Member.club_id == member.club_id).count()
     )
+    checked_in_today = today_meeting is not None and (
+        db.query(models.CheckIn)
+        .filter(
+            models.CheckIn.member_id == member.id,
+            models.CheckIn.meeting_id == today_meeting.id,
+        )
+        .first()
+        is not None
+    )
     return schemas.MemberSummaryOut(
         check_in_count=check_in_count,
         meetings_total=meetings_total,
@@ -337,6 +346,7 @@ def my_summary(
         today_meeting_name=today_meeting.name if today_meeting else "Weekly Fellowship Meeting",
         member_count=member_count,
         club_status="suspended" if is_club_access_blocked(member.club) else "active",
+        checked_in_today=checked_in_today,
     )
 
 
