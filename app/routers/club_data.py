@@ -15,7 +15,7 @@ from ..event_announcements import (
 )
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_gallery_image
-from ..utils import get_or_create_meeting
+from ..utils import get_or_create_meeting, is_club_access_blocked
 from .club_members import PRESIDENT_ROLES
 
 _REMOVE_IMAGE = "__remove__"
@@ -327,7 +327,7 @@ def my_summary(
         attendance_percent=min(100, attendance),
         today_meeting_name=today_meeting.name if today_meeting else "Weekly Fellowship Meeting",
         member_count=member_count,
-        club_status=member.club.status,
+        club_status="suspended" if is_club_access_blocked(member.club) else "active",
     )
 
 

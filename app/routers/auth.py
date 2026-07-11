@@ -10,6 +10,7 @@ from ..rate_limit import (
     rate_limit_ok,
     record_failed_attempt,
 )
+from ..utils import is_club_access_blocked
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -62,5 +63,5 @@ def login(
         club_name=member.club.name,
         club_logo=member.club.logo,
         club_type=member.club.club_type,
-        club_status=member.club.status,
+        club_status="suspended" if is_club_access_blocked(member.club) else "active",
     )

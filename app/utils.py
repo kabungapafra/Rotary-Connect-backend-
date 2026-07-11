@@ -78,3 +78,13 @@ def compute_payment_status(next_due_date: date | None) -> str:
     if next_due_date <= today + timedelta(days=7):
         return "due-soon"
     return "paid"
+
+
+def is_club_access_blocked(club: models.Club) -> bool:
+    """Whether members of this club should see the Club Suspended screen —
+    either the system admin suspended it directly, or its dues went
+    overdue. Derived at read time (never stored), same as
+    compute_payment_status, so recording a payment self-heals it the
+    moment next_due_date moves back into the future — no separate
+    "un-suspend" step needed."""
+    return club.status == "suspended" or compute_payment_status(club.next_due_date) == "overdue"
