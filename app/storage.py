@@ -48,6 +48,16 @@ def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -
     return f"{config.R2_PUBLIC_URL}/{key}", key
 
 
+def store_club_logo(logo: str | None, club_id: int) -> tuple[str | None, str | None]:
+    """Where a club logo should live: R2 when it's a fresh data-URL upload
+    and R2 is configured, returning (public_url, storage_key). Without R2
+    (local dev) the data URL is kept as-is; a non-data value (already a
+    URL, or nothing) passes through untouched."""
+    if not logo or not logo.startswith("data:") or _client is None:
+        return logo, None
+    return upload_gallery_image(logo, club_id, prefix="logos")
+
+
 def delete_gallery_image(storage_key: str) -> None:
     if _client is None or not storage_key:
         return
@@ -82,6 +92,22 @@ def migrate_legacy_photos(db: Session) -> int:
         photo.storage_key = key
         db.commit()
         count += 1
+    legacy_logos = (
+        db.query(models.Club)
+        .filter(models.Club.logo_storage_key.is_(None))
+        .filter(models.Club.logo.like("data:image/%"))
+        .all()
+    )
+    for club in legacy_logos:
+        try:
+            url, key = upload_gallery_image(club.logo, club.id, prefix="logos")
+        except Exception:
+            logger.exception("Failed to migrate club %d logo to R2", club.id)
+            continue
+        club.logo = url
+        club.logo_storage_key = key
+        db.commit()
+        count += 1
     if count:
-        logger.info("Migrated %d legacy gallery photo(s) to R2", count)
+        logger.info("Migrated %d legacy photo(s)/logo(s) to R2", count)
     return count

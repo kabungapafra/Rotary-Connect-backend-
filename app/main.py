@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +33,15 @@ from .thank_you import send_pending_thank_yous
 
 logger = logging.getLogger("rotary.main")
 
-app = FastAPI(title="Rotary Connect API")
+# The interactive docs advertise the whole API surface to anyone who finds
+# them; keep them off in production and opt in locally with DOCS_ENABLED=1.
+_docs_enabled = os.getenv("DOCS_ENABLED") == "1"
+app = FastAPI(
+    title="Rotary Connect API",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 # The mobile app is a native HTTP client, not a browser, so CORS never
 # applies to it either way. The only real browser caller is the admin
@@ -143,6 +152,9 @@ def on_startup() -> None:
         conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS image TEXT"))
         conn.execute(
             text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_key TEXT")
+        )
+        conn.execute(
+            text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_storage_key TEXT")
         )
         # Postgres doesn't index FK columns automatically; these back the
         # hottest per-club/per-meeting filters. Names match what create_all

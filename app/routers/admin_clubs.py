@@ -7,6 +7,7 @@ from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
 from ..sms import send_sms
+from ..storage import delete_gallery_image, store_club_logo
 from ..utils import (
     compute_payment_status,
     format_display_date,
@@ -74,10 +75,10 @@ def create_club(
         fee_amount=payload.fee_amount or 0,
         last_paid_date=parse_display_date(payload.first_payment_date),
         next_due_date=parse_display_date(payload.next_due_date),
-        logo=payload.logo,
     )
     db.add(club)
     db.flush()
+    club.logo, club.logo_storage_key = store_club_logo(payload.logo, club.id)
 
     # The club's first administrator: only this Club President account can
     # add and manage the club's other administrators and members.
@@ -201,6 +202,8 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.Project).filter(models.Project.club_id == club_id).delete(
         synchronize_session=False
     )
+    if club.logo_storage_key:
+        delete_gallery_image(club.logo_storage_key)
     db.delete(club)
     db.commit()
     return {"deleted": True}
