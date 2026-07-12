@@ -144,6 +144,15 @@ def on_startup() -> None:
         conn.execute(
             text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_key TEXT")
         )
+        # Postgres doesn't index FK columns automatically; these back the
+        # hottest per-club/per-meeting filters. Names match what create_all
+        # gives fresh databases from the models' index=True.
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_members_club_id ON members (club_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_club_id ON events (club_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_club_id ON projects (club_id)"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_check_ins_meeting_id ON check_ins (meeting_id)")
+        )
     seed_bootstrap_data()
 
     with SessionLocal() as db:

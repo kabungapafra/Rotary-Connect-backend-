@@ -71,7 +71,7 @@ class Member(Base):
     __tablename__ = "members"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     member_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(80), default="Member")
@@ -122,7 +122,7 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     dow: Mapped[str] = mapped_column(String(3), default="WED")
     name: Mapped[str] = mapped_column(String(160))
     meta: Mapped[str] = mapped_column(String(240), default="")
@@ -139,7 +139,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"))
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     name: Mapped[str] = mapped_column(String(160))
     area: Mapped[str] = mapped_column(String(120), default="")
     pct: Mapped[int] = mapped_column(Integer, default=0)
@@ -162,7 +162,7 @@ class CheckIn(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     member_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"))
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), index=True)
     checked_in_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
