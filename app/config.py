@@ -28,7 +28,7 @@ SMS_ENABLED = bool(YOOLA_API_KEY)
 
 # This backend's own public URL — used to build real, working links (event
 # registration QR codes) rather than a domain the club doesn't control.
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://rotary-connect-backend.onrender.com")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://rotaryapi.digiflecttech.dev")
 
 # Cloudflare R2 (S3-compatible) — gallery photos live here, not as base64
 # blobs in Postgres, which would blow past the free-tier DB storage quota

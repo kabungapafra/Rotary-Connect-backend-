@@ -51,3 +51,38 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+  deploy:
+    name: 🚀 Deploy to rotary-server
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 45.140.185.111 >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        run: |
+          rsync -a --delete \
+            --exclude .env --exclude .venv --exclude .git \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            ./ root@45.140.185.111:/srv/rotary-backend/
+
+      - name: Install deps, restart, verify health
+        run: |
+          ssh -i ~/.ssh/deploy_key root@45.140.185.111 '
+            set -e
+            chown -R rotary:rotary /srv/rotary-backend
+            sudo -u rotary /srv/rotary-backend/.venv/bin/pip install -q -r /srv/rotary-backend/requirements.txt
+            systemctl restart rotary
+            sleep 4
+            curl -sf http://127.0.0.1:8000/health
+          '
