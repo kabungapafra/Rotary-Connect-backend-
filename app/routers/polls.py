@@ -52,13 +52,15 @@ def _poll_out(db: Session, poll: models.Poll, member: models.Member) -> schemas.
 
 def _generate_derangement(names: list[str]) -> list[str]:
     """A random permutation of `names` where no one lands on their own
-    original position — i.e. nobody "gets" themselves. Rejection sampling:
-    reshuffle until that holds, which converges fast for any n >= 2."""
-    shuffled = names[:]
+    original position — i.e. nobody "gets" themselves. Rejection sampling
+    over positions rather than name strings — two members sharing a name
+    must not make this loop forever (identical strings can never satisfy
+    an inequality check). Converges fast for any n >= 2."""
+    indices = list(range(len(names)))
     while True:
-        random.shuffle(shuffled)
-        if all(a != b for a, b in zip(names, shuffled)):
-            return shuffled
+        random.shuffle(indices)
+        if all(i != j for i, j in enumerate(indices)):
+            return [names[j] for j in indices]
 
 
 @router.get("/active", response_model=schemas.PollOut | None)

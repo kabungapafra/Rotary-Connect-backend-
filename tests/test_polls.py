@@ -64,10 +64,13 @@ def test_election_needs_two_candidates(client, make_member):
 
 
 def test_draw_pairs_every_member_with_someone_else_no_repeats_no_self(client, make_member):
-    board = make_member(role="President", suffix="046", is_board=True)
-    m2 = make_member(role="Member", suffix="047")
-    m3 = make_member(role="Member", suffix="048")
-    m4 = make_member(role="Member", suffix="049")
+    # Distinct names matter: assignments pair name strings, so the
+    # giver != recipient assertions below would be vacuously wrong (and
+    # the draw itself degenerate) if everyone shared the default name.
+    board = make_member(role="President", suffix="046", is_board=True, name="Draw Alice")
+    m2 = make_member(role="Member", suffix="047", name="Draw Ben")
+    m3 = make_member(role="Member", suffix="048", name="Draw Cara")
+    m4 = make_member(role="Member", suffix="049", name="Draw Dan")
 
     res = client.post(
         "/club/polls", json={"type": "draw", "title": "Gift exchange"}, headers=_auth(board)
