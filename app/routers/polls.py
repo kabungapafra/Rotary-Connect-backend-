@@ -7,18 +7,20 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..security import get_current_member
-from .club_members import PRESIDENT_ROLES
+from .club_members import MANAGER_ROLES
 
 router = APIRouter(prefix="/club/polls", tags=["polls"])
 
 VALID_TYPES = {"motion", "election", "draw"}
 
 
-def _require_board_or_president(member: models.Member) -> None:
-    if not member.is_board and member.role not in PRESIDENT_ROLES:
+def _require_manager(member: models.Member) -> None:
+    # Deliberately not is_board: plain board members lost vote creation
+    # when the Secretary gained the President's management powers.
+    if member.role not in MANAGER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only board members or the President can manage club votes",
+            detail="Only the President or Secretary can manage club votes",
         )
 
 
@@ -89,7 +91,7 @@ def create_poll(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_board_or_president(member)
+    _require_manager(member)
     if payload.type not in VALID_TYPES:
         raise HTTPException(status_code=422, detail="type must be motion, election, or draw")
     if not payload.title.strip():
@@ -174,7 +176,7 @@ def run_draw(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_board_or_president(member)
+    _require_manager(member)
     poll = db.get(models.Poll, poll_id)
     if poll is None or poll.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Poll not found")
@@ -202,10 +204,10 @@ def close_poll(
     poll = db.get(models.Poll, poll_id)
     if poll is None or poll.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Poll not found")
-    if poll.created_by != member.id and member.role not in PRESIDENT_ROLES:
+    if poll.created_by != member.id and member.role not in MANAGER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the poll's creator or the President can close it early",
+            detail="Only the poll's creator, President, or Secretary can close it early",
         )
     poll.status = "closed"
     db.commit()

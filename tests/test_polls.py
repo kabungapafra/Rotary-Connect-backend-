@@ -1,6 +1,7 @@
-"""Club voting: motions/elections need board or presidential authority to
-create, any member can cast one vote, and a random draw resolves
-server-side so the result can't be manipulated client-side."""
+"""Club voting: motions/elections need the President or Secretary to
+create (plain board members can't), any member can cast one vote, and a
+random draw resolves server-side so the result can't be manipulated
+client-side."""
 
 from app import models, security
 
@@ -20,14 +21,26 @@ def test_plain_member_cannot_create_poll(client, make_member):
     assert res.status_code == 403
 
 
-def test_board_member_creates_motion_and_others_vote_once(client, make_member):
-    board = make_member(role="Community Service Director", suffix="041", is_board=True)
+def test_board_member_cannot_create_poll(client, make_member):
+    # Vote creation is the President's and Secretary's alone — sitting on
+    # the board (e.g. a Director) no longer grants it.
+    board = make_member(role="Community Service Director", suffix="044", is_board=True)
+    res = client.post(
+        "/club/polls",
+        json={"type": "motion", "title": "Adopt the budget"},
+        headers=_auth(board),
+    )
+    assert res.status_code == 403
+
+
+def test_secretary_creates_motion_and_others_vote_once(client, make_member):
+    secretary = make_member(role="Secretary", suffix="041", is_board=True)
     voter = make_member(role="Member", suffix="042")
 
     res = client.post(
         "/club/polls",
         json={"type": "motion", "title": "Adopt the budget"},
-        headers=_auth(board),
+        headers=_auth(secretary),
     )
     assert res.status_code == 200
     poll = res.json()

@@ -44,7 +44,9 @@ def test_president_role_can_create_event(client, make_member):
     assert res.status_code == 200
 
 
-def test_secretary_can_generate_qr_but_not_create_event(client, make_member, make_event):
+def test_secretary_shares_president_management_powers(client, make_member, make_event):
+    # The Secretary can do everything the President can — events, projects,
+    # members — not just generate QR links.
     secretary = make_member(role="Secretary", suffix="013", is_board=True)
     event = make_event()
 
@@ -54,10 +56,29 @@ def test_secretary_can_generate_qr_but_not_create_event(client, make_member, mak
 
     res = client.post(
         "/club/events",
-        json={"dow": "SAT", "name": "Secretary should not create this", "meta": ""},
+        json={"dow": "SAT", "name": "Secretary-created", "meta": ""},
         headers=_auth(secretary),
     )
-    assert res.status_code == 403
+    assert res.status_code == 200
+
+    res = client.post(
+        "/club/projects",
+        json={"name": "Secretary project", "area": "", "pct": 0, "desc": ""},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200
+    # Delete it too — both to prove the Secretary can manage (not just
+    # create) projects, and because test_club's teardown doesn't clean
+    # up projects, so a leftover row trips the club FK.
+    res = client.delete(f"/club/projects/{res.json()['id']}", headers=_auth(secretary))
+    assert res.status_code == 200
+
+    res = client.post(
+        "/club/members",
+        json={"name": "Added By Secretary", "phone": "256700990130", "role": "Member"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200
 
 
 def test_treasurer_cannot_generate_event_qr(client, make_member, make_event):

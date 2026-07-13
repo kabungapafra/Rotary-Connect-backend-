@@ -17,7 +17,7 @@ from ..push import send_bulk_push, tokens_for_club
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_gallery_image
 from ..utils import get_or_create_meeting, is_club_access_blocked
-from .club_members import PRESIDENT_ROLES
+from .club_members import MANAGER_ROLES
 
 _REMOVE_IMAGE = "__remove__"
 
@@ -43,11 +43,11 @@ def _apply_r2_image(obj: "models.Event | models.Project", image: str | None, pre
 router = APIRouter(prefix="/club", tags=["club"])
 
 
-def _require_president(member: models.Member) -> None:
-    if member.role not in PRESIDENT_ROLES:
+def _require_manager(member: models.Member) -> None:
+    if member.role not in MANAGER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Club President can manage this",
+            detail="Only the Club President or Secretary can manage this",
         )
 
 
@@ -107,7 +107,7 @@ def create_event(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     if not payload.name.strip():
         raise HTTPException(status_code=422, detail="Event name is required")
     event = models.Event(
@@ -145,7 +145,7 @@ def update_event(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -166,7 +166,7 @@ def delete_event(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -199,7 +199,7 @@ def create_project(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     if not payload.name.strip():
         raise HTTPException(status_code=422, detail="Project name is required")
     project = models.Project(
@@ -225,7 +225,7 @@ def update_project(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     project = db.get(models.Project, project_id)
     if project is None or project.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -246,7 +246,7 @@ def delete_project(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     project = db.get(models.Project, project_id)
     if project is None or project.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Project not found")

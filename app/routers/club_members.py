@@ -14,6 +14,11 @@ PRESIDENT_ROLE = "Club President"  # stored on a club's auto-created president
 # manually given that title has the same authority as the auto-created one.
 PRESIDENT_ROLES = {"Club President", "President"}
 
+# The Secretary shares the President's management powers (members, events,
+# projects, votes). The reverse doesn't hold: the Secretary workspace stays
+# the Secretary's alone.
+MANAGER_ROLES = PRESIDENT_ROLES | {"Secretary"}
+
 # Executive roles allowed to generate an event's registration QR/link.
 EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
     "Sergeant-at-Arms",
@@ -23,13 +28,13 @@ EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
 }
 
 
-def _require_president(member: models.Member) -> None:
-    """Only the Club President can add and manage the club's other
-    administrators and members."""
-    if member.role not in PRESIDENT_ROLES:
+def _require_manager(member: models.Member) -> None:
+    """Only the Club President or Secretary can add and manage the club's
+    other administrators and members."""
+    if member.role not in MANAGER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Club President can manage members",
+            detail="Only the Club President or Secretary can manage members",
         )
 
 
@@ -53,7 +58,7 @@ def add_member(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     name = payload.name.strip()
     phone = payload.phone.strip()
     if not name or not phone:
@@ -96,7 +101,7 @@ def update_member(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_president(member)
+    _require_manager(member)
     target = db.get(models.Member, member_id)
     if target is None or target.club_id != member.club_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
