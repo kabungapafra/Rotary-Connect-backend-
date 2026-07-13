@@ -160,6 +160,29 @@ def update_minute(
     return _minute_out(minute)
 
 
+@router.delete("/minutes/{minute_id}")
+def delete_minute(
+    minute_id: int,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Drafts (and failed/stuck transcriptions) can be discarded. Approved
+    minutes are the club's official record — flip them back to draft first
+    if they really must go, so deletion is always a two-step act."""
+    _require_secretary(member)
+    minute = db.get(models.Minute, minute_id)
+    if minute is None or minute.club_id != member.club_id:
+        raise HTTPException(status_code=404, detail="Minute not found")
+    if minute.status == "approved":
+        raise HTTPException(
+            status_code=422,
+            detail="Approved minutes can't be deleted — set them back to draft first",
+        )
+    db.delete(minute)
+    db.commit()
+    return {"deleted": True}
+
+
 # ── club documents ───────────────────────────────────────────────────────
 
 @router.get("/documents", response_model=list[schemas.ClubDocumentOut])
