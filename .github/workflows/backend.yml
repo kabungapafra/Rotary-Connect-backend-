@@ -83,6 +83,14 @@ jobs:
             chown -R rotary:rotary /srv/rotary-backend
             sudo -u rotary /srv/rotary-backend/.venv/bin/pip install -q -r /srv/rotary-backend/requirements.txt
             systemctl restart rotary
-            sleep 4
-            curl -sf http://127.0.0.1:8000/health
+            # Workers can take ~10s to come up (migrations run at startup);
+            # poll instead of a one-shot check so the deploy isn't marked
+            # failed while the API is still booting.
+            for i in $(seq 1 15); do
+              sleep 2
+              curl -sf http://127.0.0.1:8000/health && exit 0
+            done
+            echo "API did not become healthy within 30s" >&2
+            journalctl -u rotary -n 50 --no-pager >&2
+            exit 1
           '
