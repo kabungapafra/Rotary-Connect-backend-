@@ -191,7 +191,7 @@ def test_from_audio_reports_unconfigured_when_groq_key_missing(client, make_memb
     assert res.status_code == 503
 
 
-def test_secretary_deletes_draft_but_not_approved_minute(client, make_member):
+def test_secretary_deletes_minutes_members_cannot(client, make_member):
     secretary = make_member(role="Secretary", suffix="061", is_board=True)
     member = make_member(role="Member", suffix="062")
 
@@ -206,19 +206,11 @@ def test_secretary_deletes_draft_but_not_approved_minute(client, make_member):
     res = client.delete(f"/club/secretary/minutes/{minute_id}", headers=_auth(member))
     assert res.status_code == 403
 
-    # Approved minutes are the official record — deletion is refused until
-    # they're deliberately flipped back to draft.
+    # The secretary can — any status, approved included (the app puts a
+    # confirm dialog in front of this).
     client.patch(
         f"/club/secretary/minutes/{minute_id}",
         json={"status": "approved"},
-        headers=_auth(secretary),
-    )
-    res = client.delete(f"/club/secretary/minutes/{minute_id}", headers=_auth(secretary))
-    assert res.status_code == 422
-
-    client.patch(
-        f"/club/secretary/minutes/{minute_id}",
-        json={"status": "draft"},
         headers=_auth(secretary),
     )
     res = client.delete(f"/club/secretary/minutes/{minute_id}", headers=_auth(secretary))
