@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..security import get_current_member
+from ..storage import delete_gallery_image, upload_club_document
 from .club_members import PRESIDENT_ROLES
 from .treasury import treasury_summary
 
@@ -105,6 +106,64 @@ def update_minute_status(
         status=minute.status,
         created_at=minute.created_at,
     )
+
+
+# ── club documents ───────────────────────────────────────────────────────
+
+@router.get("/documents", response_model=list[schemas.ClubDocumentOut])
+def list_documents(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    _require_secretary(member)
+    return (
+        db.query(models.ClubDocument)
+        .filter(models.ClubDocument.club_id == member.club_id)
+        .order_by(models.ClubDocument.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/documents", response_model=schemas.ClubDocumentOut)
+def upload_document(
+    payload: schemas.ClubDocumentCreate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    _require_secretary(member)
+    if not payload.title.strip():
+        raise HTTPException(status_code=422, detail="Title is required")
+    try:
+        url, key = upload_club_document(payload.file, member.club_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    doc = models.ClubDocument(
+        club_id=member.club_id,
+        title=payload.title.strip(),
+        url=url,
+        storage_key=key,
+        created_by=member.id,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    _require_secretary(member)
+    doc = db.get(models.ClubDocument, document_id)
+    if doc is None or doc.club_id != member.club_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    delete_gallery_image(doc.storage_key)
+    db.delete(doc)
+    db.commit()
+    return {"deleted": True}
 
 
 # ── club history / milestones ────────────────────────────────────────────

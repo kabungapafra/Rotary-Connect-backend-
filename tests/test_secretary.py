@@ -2,7 +2,11 @@
 Secretary/President-only writes; reports are computed from real data, not
 fabricated numbers, and readable by any club member."""
 
-from app import security
+import base64
+
+import pytest
+
+from app import security, storage
 
 
 def _auth(member):
@@ -86,3 +90,52 @@ def test_monthly_report_reflects_real_membership_count(client, make_member):
     current = next(r for r in membership_section["rows"] if r["label"] == "Current membership")
     # 2 members created above, in a club that started with none.
     assert current["value"] == "2"
+
+
+_TINY_PDF = "data:application/pdf;base64," + base64.b64encode(
+    b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF"
+).decode()
+
+
+@pytest.mark.skipif(storage._client is None, reason="R2 storage not configured")
+def test_secretary_uploads_and_deletes_club_document(client, make_member):
+    secretary = make_member(role="Secretary", suffix="056", is_board=True)
+    member = make_member(role="Member", suffix="057")
+
+    # Documents are the Secretary's alone — members can't upload or list.
+    res = client.post(
+        "/club/secretary/documents",
+        json={"title": "Club Constitution", "file": _TINY_PDF},
+        headers=_auth(member),
+    )
+    assert res.status_code == 403
+    res = client.get("/club/secretary/documents", headers=_auth(member))
+    assert res.status_code == 403
+
+    res = client.post(
+        "/club/secretary/documents",
+        json={"title": "Club Constitution", "file": _TINY_PDF},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200
+    doc = res.json()
+    # Stored on R2, not in Postgres — the row holds a public URL.
+    assert doc["url"].startswith("http")
+
+    res = client.get("/club/secretary/documents", headers=_auth(secretary))
+    assert any(d["id"] == doc["id"] for d in res.json())
+
+    # Non-PDF uploads are rejected — the section is PDF-only by design.
+    res = client.post(
+        "/club/secretary/documents",
+        json={"title": "Sneaky image", "file": "data:image/png;base64,aWJt"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 422
+
+    res = client.delete(
+        f"/club/secretary/documents/{doc['id']}", headers=_auth(secretary)
+    )
+    assert res.status_code == 200
+    res = client.get("/club/secretary/documents", headers=_auth(secretary))
+    assert not any(d["id"] == doc["id"] for d in res.json())

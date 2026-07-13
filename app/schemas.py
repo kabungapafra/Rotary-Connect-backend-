@@ -426,6 +426,20 @@ class MinuteOut(BaseModel):
     created_at: datetime
 
 
+class ClubDocumentCreate(BaseModel):
+    title: str
+    file: str  # "data:application/pdf;base64,..."
+
+
+class ClubDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    url: str
+    created_at: datetime
+
+
 class MilestoneCreate(BaseModel):
     year: str
     title: str

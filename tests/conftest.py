@@ -129,6 +129,9 @@ def make_member(db, test_club):
         db.query(models.Milestone).filter(models.Milestone.created_by.in_(member_ids)).delete(
             synchronize_session=False
         )
+        db.query(models.ClubDocument).filter(
+            models.ClubDocument.created_by.in_(member_ids)
+        ).delete(synchronize_session=False)
     for member_id in created_ids:
         # A test may have deleted the member itself (e.g. via DELETE
         # /admin/members) — nothing left to do then.

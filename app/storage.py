@@ -106,6 +106,23 @@ def upload_gallery_photo(data_url: str, club_id: int) -> tuple[str, str, str | N
     return url, key, _upload_thumb(raw, key)
 
 
+def upload_club_document(data_url: str, club_id: int) -> tuple[str, str]:
+    """Decode a "data:application/pdf;base64,..." URL, upload it to R2,
+    and return (public_url, storage_key). Only PDFs are accepted — the
+    documents section is for important club paperwork, and one predictable
+    format keeps viewing simple on every device."""
+    if _client is None:
+        raise RuntimeError("R2 storage is not configured")
+    raw, content_type, _ = _decode_data_url(data_url)
+    if content_type != "application/pdf" or not raw.startswith(b"%PDF"):
+        raise ValueError("Only PDF documents are accepted")
+    key = f"documents/{club_id}/{uuid.uuid4().hex}.pdf"
+    _client.put_object(
+        Bucket=config.R2_BUCKET_NAME, Key=key, Body=raw, ContentType=content_type
+    )
+    return f"{config.R2_PUBLIC_URL}/{key}", key
+
+
 def store_club_logo(logo: str | None, club_id: int) -> tuple[str | None, str | None]:
     """Where a club logo should live: R2 when it's a fresh data-URL upload
     and R2 is configured, returning (public_url, storage_key). Without R2

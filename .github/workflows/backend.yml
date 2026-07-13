@@ -76,10 +76,13 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key" \
             ./ root@45.140.185.111:/srv/rotary-backend/
 
-      # Workers can take ~10s to come up (migrations run at startup), so the
-      # health check polls rather than sampling once. NB: the ssh script is
-      # single-quoted — no apostrophes inside it, or the quote closes early
-      # and the rest of the script runs on the runner instead of the server.
+      # Startup can take well over a minute (create_all plus the legacy
+      # photo/thumbnail migrations run before workers accept traffic — a
+      # real deploy took ~75s on 2026-07-13), so the health check polls
+      # for up to 3 minutes rather than sampling once. NB: the ssh script
+      # is single-quoted — no apostrophes inside it, or the quote closes
+      # early and the rest of the script runs on the runner instead of the
+      # server.
       - name: Install deps, restart, verify health
         run: |
           ssh -i ~/.ssh/deploy_key root@45.140.185.111 '
@@ -87,11 +90,11 @@ jobs:
             chown -R rotary:rotary /srv/rotary-backend
             sudo -u rotary /srv/rotary-backend/.venv/bin/pip install -q -r /srv/rotary-backend/requirements.txt
             systemctl restart rotary
-            for i in $(seq 1 15); do
-              sleep 2
+            for i in $(seq 1 36); do
+              sleep 5
               curl -sf http://127.0.0.1:8000/health && exit 0
             done
-            echo "API did not become healthy within 30s" >&2
+            echo "API did not become healthy within 3 minutes" >&2
             journalctl -u rotary -n 50 --no-pager >&2
             exit 1
           '

@@ -264,6 +264,27 @@ class GalleryPhoto(Base):
     uploader: Mapped["Member"] = relationship()
 
 
+class ClubDocument(Base):
+    """An important club document (constitution, bylaws, policies, …)
+    uploaded by the Secretary as a PDF. The file itself lives on R2 like
+    gallery photos; the row holds only the public URL + object key."""
+
+    __tablename__ = "club_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    url: Mapped[str] = mapped_column(Text)
+    storage_key: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    club: Mapped["Club"] = relationship()
+    uploader: Mapped["Member"] = relationship()
+
+
 class Apology(Base):
     """A member's apology for missing a specific day's meeting — one per
     member per meeting date, shown to the board in the attendance
