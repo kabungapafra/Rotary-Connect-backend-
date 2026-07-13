@@ -81,15 +81,43 @@ def _upload_thumb(raw: bytes, key: str) -> str | None:
     return f"{config.R2_PUBLIC_URL}/{tkey}"
 
 
+# Originals are display assets, not archives: phone cameras produce 3-12MB
+# JPEGs, but nothing in the app renders wider than a phone screen. Capping
+# the long side and recompressing to WebP cuts stored bytes ~10x.
+_ORIGINAL_MAX_PX = 1920
+_ORIGINAL_QUALITY = 82
+
+
+def _shrink_original(raw: bytes, content_type: str, ext: str) -> tuple[bytes, str, str]:
+    """Downscale + recompress an uploaded image to WebP. Bytes that can't
+    be decoded as an image (or that came out larger — tiny PNGs can) are
+    stored as uploaded."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA" if "A" in img.mode else "RGB")
+        img.thumbnail((_ORIGINAL_MAX_PX, _ORIGINAL_MAX_PX))
+        buf = io.BytesIO()
+        img.save(buf, "WEBP", quality=_ORIGINAL_QUALITY)
+        shrunk = buf.getvalue()
+        if len(shrunk) < len(raw):
+            return shrunk, "image/webp", "webp"
+    except Exception:
+        logger.exception("Could not shrink upload; storing as-is")
+    return raw, content_type, ext
+
+
 def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -> tuple[str, str]:
-    """Decode a "data:image/...;base64,..." URL, upload it to R2, and
-    return (public_url, storage_key). Raises RuntimeError if R2 isn't
-    configured — callers should treat that as a hard failure, not silently
-    drop the photo. `prefix` namespaces the object key by use (gallery
-    photos vs. event banners share this same bucket)."""
+    """Decode a "data:image/...;base64,..." URL, shrink it, upload it to
+    R2, and return (public_url, storage_key). Raises RuntimeError if R2
+    isn't configured — callers should treat that as a hard failure, not
+    silently drop the photo. `prefix` namespaces the object key by use
+    (gallery photos vs. event banners share this same bucket)."""
     if _client is None:
         raise RuntimeError("R2 storage is not configured")
     raw, content_type, ext = _decode_data_url(data_url)
+    raw, content_type, ext = _shrink_original(raw, content_type, ext)
     key = f"{prefix}/{club_id}/{uuid.uuid4().hex}.{ext}"
     _client.put_object(
         Bucket=config.R2_BUCKET_NAME, Key=key, Body=raw, ContentType=content_type
