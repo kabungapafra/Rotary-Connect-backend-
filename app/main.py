@@ -28,7 +28,7 @@ from .routers import (
 )
 from .scheduler import scheduler
 from .seed import seed_bootstrap_data
-from .storage import migrate_legacy_photos
+from .storage import backfill_gallery_thumbs, migrate_legacy_photos
 from .thank_you import send_pending_thank_yous
 
 logger = logging.getLogger("rotary.main")
@@ -132,6 +132,9 @@ def on_startup() -> None:
         conn.execute(
             text("ALTER TABLE gallery_photos ADD COLUMN IF NOT EXISTS storage_key TEXT")
         )
+        conn.execute(
+            text("ALTER TABLE gallery_photos ADD COLUMN IF NOT EXISTS thumb TEXT")
+        )
         conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS image TEXT"))
         conn.execute(
             text("ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_key TEXT")
@@ -169,6 +172,7 @@ def on_startup() -> None:
 
     with SessionLocal() as db:
         migrate_legacy_photos(db)
+        backfill_gallery_thumbs(db)
 
     # Birthday SMS: sent at 7am Africa/Kampala (UTC+3, fixed, no DST) ->
     # 04:00 UTC. Plus one run right now at startup — the free-tier dyno

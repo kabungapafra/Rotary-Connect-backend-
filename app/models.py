@@ -248,6 +248,10 @@ class GalleryPhoto(Base):
     # was wired up) briefly hold a "data:image/...;base64,..." string until
     # the startup migration in main.py uploads them and rewrites this.
     image: Mapped[str] = mapped_column(Text)
+    # Public R2 URL of the small WebP rendition the gallery grid loads
+    # instead of the full photo. Null until the startup backfill (or a
+    # fresh upload) generates one; the app then falls back to `image`.
+    thumb: Mapped[str | None] = mapped_column(Text, nullable=True)
     # R2 object key, needed to delete the file from the bucket. Null only
     # for legacy base64 rows not yet migrated.
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)

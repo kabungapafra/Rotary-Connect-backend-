@@ -293,6 +293,7 @@ class GalleryPhotoOut(BaseModel):
     id: int
     album: str
     image: str
+    thumb: str | None = None
     created_at: datetime
 
 

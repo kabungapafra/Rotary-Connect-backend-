@@ -43,12 +43,13 @@ def upload_photos(
             raise HTTPException(status_code=422, detail="Each photo must be a data:image/... URL")
         if len(item.image) > _MAX_IMAGE_DATA_URL_LEN:
             raise HTTPException(status_code=413, detail="One of the photos is too large")
-        url, key = storage.upload_gallery_image(item.image, member.club_id)
+        url, key, thumb = storage.upload_gallery_photo(item.image, member.club_id)
         rows.append(
             models.GalleryPhoto(
                 club_id=member.club_id,
                 album=album,
                 image=url,
+                thumb=thumb,
                 storage_key=key,
                 uploaded_by=member.id,
             )
@@ -69,7 +70,7 @@ def delete_photo(
     photo = db.get(models.GalleryPhoto, photo_id)
     if photo is None or photo.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Photo not found")
-    storage.delete_gallery_image(photo.storage_key)
+    storage.delete_gallery_photo(photo.storage_key)
     db.delete(photo)
     db.commit()
     return {"deleted": True}
