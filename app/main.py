@@ -159,6 +159,9 @@ def on_startup() -> None:
         conn.execute(
             text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_storage_key TEXT")
         )
+        conn.execute(
+            text("ALTER TABLE minutes ADD COLUMN IF NOT EXISTS body TEXT DEFAULT ''")
+        )
         # Postgres doesn't index FK columns automatically; these back the
         # hottest per-club/per-meeting filters. Names match what create_all
         # gives fresh databases from the models' index=True.

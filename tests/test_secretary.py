@@ -139,3 +139,53 @@ def test_secretary_uploads_and_deletes_club_document(client, make_member):
     assert res.status_code == 200
     res = client.get("/club/secretary/documents", headers=_auth(secretary))
     assert not any(d["id"] == doc["id"] for d in res.json())
+
+
+def test_secretary_edits_minute_body_and_title(client, make_member):
+    secretary = make_member(role="Secretary", suffix="058", is_board=True)
+    member = make_member(role="Member", suffix="059")
+
+    res = client.post(
+        "/club/secretary/minutes",
+        json={"title": "Weekly Fellowship Meeting", "meeting_date": "2026-07-13"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200
+    minute = res.json()
+    assert minute["body"] == ""
+
+    # The body is where the actual minutes text lives — editable until approved.
+    res = client.patch(
+        f"/club/secretary/minutes/{minute['id']}",
+        json={"body": "## Call to Order\nThe President called...", "title": "July 13 Fellowship"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200
+    updated = res.json()
+    assert updated["body"].startswith("## Call to Order")
+    assert updated["title"] == "July 13 Fellowship"
+    assert updated["status"] == "draft"  # editing doesn't change approval
+
+    # Members can read but not edit.
+    res = client.patch(
+        f"/club/secretary/minutes/{minute['id']}",
+        json={"body": "vandalism"},
+        headers=_auth(member),
+    )
+    assert res.status_code == 403
+
+
+def test_from_audio_reports_unconfigured_when_groq_key_missing(client, make_member, monkeypatch):
+    # Without a GROQ_API_KEY the endpoint must say so loudly (503), never
+    # accept the upload and silently drop it.
+    from app import config as app_config
+
+    monkeypatch.setattr(app_config, "GROQ_ENABLED", False)
+    secretary = make_member(role="Secretary", suffix="060", is_board=True)
+    res = client.post(
+        "/club/secretary/minutes/from-audio",
+        files={"audio": ("meeting.m4a", b"\x00\x01", "audio/mp4")},
+        data={"title": "Weekly Meeting", "meeting_date": "2026-07-13"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 503

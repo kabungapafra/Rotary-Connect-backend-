@@ -42,6 +42,15 @@ R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "").rstrip("/")
 R2_ENDPOINT_URL = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com" if R2_ACCOUNT_ID else ""
 R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_PUBLIC_URL)
 
+# Groq — audio transcription (Whisper) and minutes drafting (Llama) for the
+# Secretary's record-a-meeting flow. Same convention as SMS/R2: the feature
+# reports itself unavailable (never errors at import) when unconfigured.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_ENABLED = bool(GROQ_API_KEY)
+# ffmpeg re-encodes uploads to small mono audio before hitting Groq's file
+# size cap; override when the binary isn't on PATH (local dev sandboxes).
+FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
+
 # Firebase Cloud Messaging (push notifications). FIREBASE_CREDENTIALS_JSON
 # holds the *contents* of a Firebase service account key (Project settings >
 # Service accounts > Generate new private key) — a whole JSON blob in one

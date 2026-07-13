@@ -411,7 +411,12 @@ class Minute(Base):
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     meeting_date: Mapped[date] = mapped_column(Date)
-    status: Mapped[str] = mapped_column(String(10), default="draft")  # draft | approved
+    # draft | approved, plus two internal states for the audio flow:
+    # processing (transcription job running) | failed (job errored)
+    status: Mapped[str] = mapped_column(String(10), default="draft")
+    # The minutes text itself (markdown). Empty for legacy rows created when
+    # a minute was only a title + date.
+    body: Mapped[str] = mapped_column(Text, default="")
     created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -1,12 +1,24 @@
+import tempfile
+
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import config, models, schemas
 from ..database import get_db
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_club_document
+from ..transcription import process_minute_audio
 from .club_members import PRESIDENT_ROLES
 from .treasury import treasury_summary
 
@@ -32,6 +44,17 @@ def _parse_date(value: str) -> date:
 
 # ── minutes ────────────────────────────────────────────────────────────
 
+def _minute_out(m: models.Minute) -> schemas.MinuteOut:
+    return schemas.MinuteOut(
+        id=m.id,
+        title=m.title,
+        meeting_date=m.meeting_date.isoformat(),
+        status=m.status,
+        body=m.body or "",
+        created_at=m.created_at,
+    )
+
+
 @router.get("/minutes", response_model=list[schemas.MinuteOut])
 def list_minutes(
     db: Session = Depends(get_db),
@@ -43,16 +66,7 @@ def list_minutes(
         .order_by(models.Minute.meeting_date.desc())
         .all()
     )
-    return [
-        schemas.MinuteOut(
-            id=m.id,
-            title=m.title,
-            meeting_date=m.meeting_date.isoformat(),
-            status=m.status,
-            created_at=m.created_at,
-        )
-        for m in rows
-    ]
+    return [_minute_out(m) for m in rows]
 
 
 @router.post("/minutes", response_model=schemas.MinuteOut)
@@ -74,38 +88,76 @@ def create_minute(
     db.add(minute)
     db.commit()
     db.refresh(minute)
-    return schemas.MinuteOut(
-        id=minute.id,
-        title=minute.title,
-        meeting_date=minute.meeting_date.isoformat(),
-        status=minute.status,
-        created_at=minute.created_at,
+    return _minute_out(minute)
+
+
+@router.post("/minutes/from-audio", response_model=schemas.MinuteOut)
+def create_minute_from_audio(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    title: str = Form(...),
+    meeting_date: str = Form(...),
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Upload a meeting recording; Groq transcribes it and drafts the
+    minutes in the background. Returns the placeholder minute immediately
+    with status `processing` — the app polls the list to see it flip to
+    `draft` (or `failed`)."""
+    _require_secretary(member)
+    if not config.GROQ_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Audio transcription isn't configured on this server yet",
+        )
+    if not title.strip():
+        raise HTTPException(status_code=422, detail="Title is required")
+
+    # Spool the upload to disk first — the background task outlives this
+    # request, so it can't read from the request's stream.
+    with tempfile.NamedTemporaryFile(prefix="rotary-upload-", delete=False) as tmp:
+        while chunk := audio.file.read(1024 * 1024):
+            tmp.write(chunk)
+        tmp_path = tmp.name
+
+    minute = models.Minute(
+        club_id=member.club_id,
+        title=title.strip(),
+        meeting_date=_parse_date(meeting_date),
+        status="processing",
+        created_by=member.id,
     )
+    db.add(minute)
+    db.commit()
+    db.refresh(minute)
+    background_tasks.add_task(process_minute_audio, minute.id, tmp_path)
+    return _minute_out(minute)
 
 
 @router.patch("/minutes/{minute_id}", response_model=schemas.MinuteOut)
-def update_minute_status(
+def update_minute(
     minute_id: int,
-    payload: schemas.MinuteStatusUpdate,
+    payload: schemas.MinuteUpdate,
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
     _require_secretary(member)
-    if payload.status not in ("draft", "approved"):
-        raise HTTPException(status_code=422, detail="status must be draft or approved")
     minute = db.get(models.Minute, minute_id)
     if minute is None or minute.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Minute not found")
-    minute.status = payload.status
+    if payload.status is not None:
+        if payload.status not in ("draft", "approved"):
+            raise HTTPException(status_code=422, detail="status must be draft or approved")
+        minute.status = payload.status
+    if payload.title is not None:
+        if not payload.title.strip():
+            raise HTTPException(status_code=422, detail="Title is required")
+        minute.title = payload.title.strip()
+    if payload.body is not None:
+        minute.body = payload.body
     db.commit()
     db.refresh(minute)
-    return schemas.MinuteOut(
-        id=minute.id,
-        title=minute.title,
-        meeting_date=minute.meeting_date.isoformat(),
-        status=minute.status,
-        created_at=minute.created_at,
-    )
+    return _minute_out(minute)
 
 
 # ── club documents ───────────────────────────────────────────────────────

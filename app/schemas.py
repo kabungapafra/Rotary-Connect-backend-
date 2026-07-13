@@ -414,15 +414,18 @@ class MinuteCreate(BaseModel):
     meeting_date: str  # "YYYY-MM-DD"
 
 
-class MinuteStatusUpdate(BaseModel):
-    status: str  # draft | approved
+class MinuteUpdate(BaseModel):
+    status: str | None = None  # draft | approved
+    title: str | None = None
+    body: str | None = None
 
 
 class MinuteOut(BaseModel):
     id: int
     title: str
     meeting_date: str
-    status: str
+    status: str  # draft | approved | processing | failed
+    body: str
     created_at: datetime
 
 
