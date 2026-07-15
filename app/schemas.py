@@ -8,6 +8,10 @@ class LoginRequest(BaseModel):
     pin: str
 
 
+class ForgotPinRequest(BaseModel):
+    identifier: str  # member number or phone, same as login
+
+
 class RegisterPushToken(BaseModel):
     token: str
     platform: str  # ios | android
