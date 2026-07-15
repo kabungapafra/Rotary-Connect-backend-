@@ -11,17 +11,23 @@ import html
 import io
 
 import qrcode
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
 from ..database import get_db
+from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..sms import normalize_ugandan_phone
 from .club_members import EVENT_REGISTRATION_ROLES
 
 router = APIRouter(tags=["event-registration"])
+
+# Public, unauthenticated form — same per-IP throttle shape as guest check-in,
+# just guarding against outright spam of an event's RSVP list.
+_RSVP_WINDOW_SECONDS = 600
+_RSVP_MAX_PER_WINDOW = 10
 
 
 def _registration_link(event_id: int) -> str:
@@ -141,12 +147,17 @@ def rsvp_form(event_id: int, db: Session = Depends(get_db)):
 @router.post("/rsvp/{event_id}", response_class=HTMLResponse)
 def rsvp_submit(
     event_id: int,
+    request: Request,
     name: str = Form(...),
     phone: str = Form(...),
     attendee_type: str = Form("Member"),
     club_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limit_ok(db, f"rsvp:{client_ip}", _RSVP_MAX_PER_WINDOW, _RSVP_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
+
     event = db.get(models.Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")

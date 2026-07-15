@@ -71,7 +71,7 @@ def get_current_member(
         raise credentials_error
 
     member = db.get(models.Member, member_id)
-    if member is None:
+    if member is None or member.status != "active":
         raise credentials_error
     return member
 

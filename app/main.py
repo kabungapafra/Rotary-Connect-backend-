@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from . import config
 from .birthdays import run_daily_sweep
 from .database import Base, SessionLocal, engine
 from .dues_reminders import run_sweep as run_dues_reminder_sweep
@@ -105,6 +106,18 @@ def _run_dues_reminder_sweep_job() -> None:
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if config.JWT_SECRET == "dev-secret-change-me":
+        logger.warning(
+            "JWT_SECRET is still the insecure default — anyone can forge admin "
+            "tokens. Set JWT_SECRET in the environment."
+        )
+    if config.ADMIN_PASSWORD == "admin123":
+        logger.warning(
+            "ADMIN_PASSWORD is still the insecure default — set ADMIN_PASSWORD "
+            "in the environment before a system-admin account is bootstrapped "
+            "with it."
+        )
+
     # No Alembic yet — create_all is enough for the current MVP stage, plus
     # idempotent ALTERs for columns added after a deployment's tables existed
     # (create_all never alters existing tables).

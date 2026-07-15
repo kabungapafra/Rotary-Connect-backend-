@@ -78,7 +78,10 @@ def create_club(
     )
     db.add(club)
     db.flush()
-    club.logo, club.logo_storage_key = store_club_logo(payload.logo, club.id)
+    try:
+        club.logo, club.logo_storage_key = store_club_logo(payload.logo, club.id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     # The club's first administrator: only this Club President account can
     # add and manage the club's other administrators and members.

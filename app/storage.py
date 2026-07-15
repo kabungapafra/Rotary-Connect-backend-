@@ -89,9 +89,11 @@ _ORIGINAL_QUALITY = 82
 
 
 def _shrink_original(raw: bytes, content_type: str, ext: str) -> tuple[bytes, str, str]:
-    """Downscale + recompress an uploaded image to WebP. Bytes that can't
-    be decoded as an image (or that came out larger — tiny PNGs can) are
-    stored as uploaded."""
+    """Downscale + recompress an uploaded image to WebP. Bytes that decode
+    but come out larger (tiny PNGs can) are stored as uploaded; bytes that
+    don't decode as a real raster image are rejected outright — storing
+    them as-is would upload arbitrary content (e.g. an SVG with a <script>)
+    to a public URL under the client's self-declared content-type."""
     try:
         img = Image.open(io.BytesIO(raw))
         img = ImageOps.exif_transpose(img)
@@ -103,9 +105,9 @@ def _shrink_original(raw: bytes, content_type: str, ext: str) -> tuple[bytes, st
         shrunk = buf.getvalue()
         if len(shrunk) < len(raw):
             return shrunk, "image/webp", "webp"
+        return raw, content_type, ext
     except Exception:
-        logger.exception("Could not shrink upload; storing as-is")
-    return raw, content_type, ext
+        raise ValueError("File is not a valid image") from None
 
 
 def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -> tuple[str, str]:

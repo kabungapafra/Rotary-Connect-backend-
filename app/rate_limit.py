@@ -1,39 +1,50 @@
-"""In-memory rate limiting and account-lockout helpers. In-memory is fine
-for now: single free-tier instance, and every window here is short enough
-that a restart just resets the clock rather than opening a real hole.
-"""
+"""Rate limiting and account-lockout helpers, backed by Postgres. An
+in-memory dict would give each uvicorn worker process its own separate
+budget instead of a shared one — with 2 worker processes in production,
+that silently doubles every limit here (an attacker split across workers
+gets ~2x the intended requests/attempts before being throttled)."""
 
-import time
-from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
-_request_log: dict[str, list[float]] = defaultdict(list)
-_failed_attempts: dict[str, list[float]] = defaultdict(list)
+from sqlalchemy.orm import Session
+
+from . import models
 
 
-def rate_limit_ok(key: str, max_per_window: int, window_seconds: int) -> bool:
+def rate_limit_ok(db: Session, key: str, max_per_window: int, window_seconds: int) -> bool:
     """True if `key` (e.g. "guest:1.2.3.4") is still under its request
     budget for the trailing window. Records this call as one of the
     requests either way."""
-    now = time.monotonic()
-    recent = [t for t in _request_log[key] if now - t < window_seconds]
-    recent.append(now)
-    _request_log[key] = recent
-    return len(recent) <= max_per_window
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    db.query(models.RateLimitHit).filter(
+        models.RateLimitHit.key == key, models.RateLimitHit.ts < cutoff
+    ).delete(synchronize_session=False)
+    count = db.query(models.RateLimitHit).filter(models.RateLimitHit.key == key).count()
+    db.add(models.RateLimitHit(key=key))
+    db.commit()
+    return count + 1 <= max_per_window
 
 
-def record_failed_attempt(key: str) -> None:
-    _failed_attempts[key].append(time.monotonic())
+def record_failed_attempt(db: Session, key: str) -> None:
+    db.add(models.FailedAttempt(key=key))
+    db.commit()
 
 
-def is_locked_out(key: str, max_attempts: int, window_seconds: int) -> bool:
+def is_locked_out(db: Session, key: str, max_attempts: int, window_seconds: int) -> bool:
     """True once `key` has racked up max_attempts failures inside the
     trailing window. Doesn't itself record an attempt — call
     record_failed_attempt separately, only on an actual failed login."""
-    now = time.monotonic()
-    recent = [t for t in _failed_attempts[key] if now - t < window_seconds]
-    _failed_attempts[key] = recent
-    return len(recent) >= max_attempts
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+    db.query(models.FailedAttempt).filter(
+        models.FailedAttempt.key == key, models.FailedAttempt.ts < cutoff
+    ).delete(synchronize_session=False)
+    db.commit()
+    count = db.query(models.FailedAttempt).filter(models.FailedAttempt.key == key).count()
+    return count >= max_attempts
 
 
-def clear_failed_attempts(key: str) -> None:
-    _failed_attempts.pop(key, None)
+def clear_failed_attempts(db: Session, key: str) -> None:
+    db.query(models.FailedAttempt).filter(models.FailedAttempt.key == key).delete(
+        synchronize_session=False
+    )
+    db.commit()

@@ -65,8 +65,8 @@ _GUEST_WINDOW_SECONDS = 600
 _GUEST_MAX_PER_WINDOW = 5
 
 
-def _guest_rate_limit_ok(client_ip: str) -> bool:
-    return rate_limit_ok(f"guest:{client_ip}", _GUEST_MAX_PER_WINDOW, _GUEST_WINDOW_SECONDS)
+def _guest_rate_limit_ok(db: Session, client_ip: str) -> bool:
+    return rate_limit_ok(db, f"guest:{client_ip}", _GUEST_MAX_PER_WINDOW, _GUEST_WINDOW_SECONDS)
 
 
 def _get_or_create_todays_meeting(db: Session, club_id: int) -> models.Meeting:
@@ -124,7 +124,7 @@ def guest_check_in(
     itself is sent later by the periodic sweep in thank_you.py, 2 hours
     after this check-in, not from here."""
     client_ip = request.client.host if request.client else "unknown"
-    if not _guest_rate_limit_ok(client_ip):
+    if not _guest_rate_limit_ok(db, client_ip):
         raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
 
     club: models.Club | None = None
@@ -180,15 +180,18 @@ def guest_check_in(
 
 
 @router.get("/today", response_model=schemas.TodayResponse)
-def today(club_id: int | None = None, db: Session = Depends(get_db)):
-    """The mobile app doesn't send `club_id` (it only ever shows one club),
-    so this falls back to the seeded default club when omitted."""
+def today(db: Session = Depends(get_db)):
+    """Unauthenticated by design — the mobile app calls this before login to
+    show who's already checked in at the door. It only ever shows one club
+    (no legitimate caller sends a club_id), so this always resolves to the
+    seeded default club rather than accepting one from the request: an
+    arbitrary club_id here would let anyone enumerate every club's roster
+    and check-in times."""
     today_date = date.today()
-    if club_id is None:
-        default_club = (
-            db.query(models.Club).filter(models.Club.name == DEFAULT_CLUB_NAME).first()
-        )
-        club_id = default_club.id if default_club else None
+    default_club = (
+        db.query(models.Club).filter(models.Club.name == DEFAULT_CLUB_NAME).first()
+    )
+    club_id = default_club.id if default_club else None
     meeting = (
         db.query(models.Meeting)
         .filter(models.Meeting.club_id == club_id, models.Meeting.date == today_date)

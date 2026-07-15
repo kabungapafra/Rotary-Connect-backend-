@@ -36,7 +36,10 @@ def _apply_r2_image(obj: "models.Event | models.Project", image: str | None, pre
         obj.image = None
         obj.storage_key = None
         return
-    url, key = upload_gallery_image(image, obj.club_id, prefix=prefix)
+    try:
+        url, key = upload_gallery_image(image, obj.club_id, prefix=prefix)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     obj.image = url
     obj.storage_key = key
 

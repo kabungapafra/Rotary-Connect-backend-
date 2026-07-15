@@ -5,6 +5,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -14,6 +15,31 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+class RateLimitHit(Base):
+    """One row per request counted against a rate-limit key. Backed by
+    Postgres (not an in-memory dict) so the budget is shared across
+    uvicorn's worker processes rather than each worker keeping its own."""
+
+    __tablename__ = "rate_limit_hits"
+    __table_args__ = (Index("ix_rate_limit_hits_key_ts", "key", "ts"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(160))
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FailedAttempt(Base):
+    """One row per failed login attempt counted against a lockout key. Same
+    cross-worker reasoning as RateLimitHit."""
+
+    __tablename__ = "failed_attempts"
+    __table_args__ = (Index("ix_failed_attempts_key_ts", "key", "ts"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(160))
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AppMeta(Base):

@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from app import models, security
 from app.database import SessionLocal
 from app.main import app
-from app.rate_limit import _failed_attempts, _request_log
 
 
 @pytest.fixture(scope="session")
@@ -22,11 +21,15 @@ def client():
 
 @pytest.fixture(autouse=True)
 def _reset_rate_limits():
-    """Rate limits and lockouts are in-memory and keyed by identifier/IP —
-    without a reset, one test's failed-login attempts would carry over
-    and lock out the next test using the same identifier."""
-    _request_log.clear()
-    _failed_attempts.clear()
+    """Rate limits and lockouts are keyed by identifier/IP and persisted in
+    Postgres (shared across uvicorn workers) — without a reset, one test's
+    failed-login attempts would carry over and lock out the next test using
+    the same identifier."""
+    session = SessionLocal()
+    session.query(models.RateLimitHit).delete()
+    session.query(models.FailedAttempt).delete()
+    session.commit()
+    session.close()
     yield
 
 

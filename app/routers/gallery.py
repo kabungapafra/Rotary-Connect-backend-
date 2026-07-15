@@ -43,7 +43,10 @@ def upload_photos(
             raise HTTPException(status_code=422, detail="Each photo must be a data:image/... URL")
         if len(item.image) > _MAX_IMAGE_DATA_URL_LEN:
             raise HTTPException(status_code=413, detail="One of the photos is too large")
-        url, key, thumb = storage.upload_gallery_photo(item.image, member.club_id)
+        try:
+            url, key, thumb = storage.upload_gallery_photo(item.image, member.club_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
         rows.append(
             models.GalleryPhoto(
                 club_id=member.club_id,
