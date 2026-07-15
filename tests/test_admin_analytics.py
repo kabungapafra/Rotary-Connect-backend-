@@ -1,9 +1,19 @@
 """admin_analytics.py aggregates across every club (system-admin only, not
 club-scoped) — locks in the auth gate and that the headline counts
 (clubs/members/mrr) actually reflect what's in the DB rather than static
-placeholders, which is the entire reason this endpoint exists."""
+placeholders, which is the entire reason this endpoint exists.
+
+Also covers the whole unhandled-error pipeline end to end: no third-party
+error tracker is configured, so main.py's global exception handler
+persisting to ErrorLog (and this router's GET /errors reading it back) is
+the *only* place an unhandled exception is visible at all — this must
+actually work, not just look plausible."""
+
+from fastapi.testclient import TestClient
 
 from app import models, security
+from app.main import app
+from app.routers import admin_analytics
 
 
 def _admin_auth(db):
@@ -40,3 +50,44 @@ def test_analytics_counts_reflect_real_data(client, db, test_club, make_member):
     assert "UGX" in body["mrr_formatted"]
     assert len(body["payment_legend"]) == 3
     assert len(body["attendance_values"]) == 6
+
+
+def test_errors_endpoint_requires_admin_auth(client):
+    assert client.get("/admin/analytics/errors").status_code == 401
+
+
+def test_unhandled_exception_is_logged_and_visible_via_errors_endpoint(
+    client, db, test_club, monkeypatch
+):
+    def _boom(_next_due_date):
+        raise ValueError("boom: simulated failure for error-log coverage")
+
+    monkeypatch.setattr(admin_analytics, "compute_payment_status", _boom)
+
+    # The shared `client` fixture re-raises server exceptions (so ordinary
+    # test failures show a real traceback) — this is the one test that
+    # deliberately triggers a 500 and needs to see the response body a real
+    # HTTP client would get. Deliberately not entered as a context manager:
+    # that would re-run the app's startup lifespan (already run once by the
+    # session-scoped `client` fixture) and crash on starting the shared
+    # scheduler singleton a second time. Routes don't need a second
+    # startup — they're bound to the same shared `app` either way.
+    unguarded_client = TestClient(app, raise_server_exceptions=False)
+    res = unguarded_client.get("/admin/analytics", headers=_admin_auth(db))
+    assert res.status_code == 500
+    assert res.json() == {"detail": "Internal server error"}
+
+    # monkeypatch has already reverted compute_payment_status by the time
+    # this second, unrelated request runs.
+    res = client.get("/admin/analytics/errors", headers=_admin_auth(db))
+    assert res.status_code == 200
+    errors = res.json()
+    assert any(
+        e["exception_type"] == "ValueError" and "boom" in e["message"] for e in errors
+    ), errors
+
+    db.query(models.ErrorLog).filter(
+        models.ErrorLog.exception_type == "ValueError",
+        models.ErrorLog.message.like("boom:%"),
+    ).delete(synchronize_session=False)
+    db.commit()

@@ -96,3 +96,16 @@ def analytics(db: Session = Depends(get_db)):
         attendance_labels=attendance_labels,
         attendance_values=attendance_values,
     )
+
+
+@router.get("/errors", response_model=list[schemas.ErrorLogOut])
+def recent_errors(db: Session = Depends(get_db)):
+    """The last 50 unhandled API exceptions — no third-party error tracker
+    is configured, so this (backed by main.py's global exception handler)
+    is the only place these are visible at all outside server logs."""
+    return (
+        db.query(models.ErrorLog)
+        .order_by(models.ErrorLog.created_at.desc())
+        .limit(50)
+        .all()
+    )

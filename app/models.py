@@ -226,6 +226,27 @@ class GuestVisit(Base):
     club: Mapped["Club"] = relationship()
 
 
+class ErrorLog(Base):
+    """One row per unhandled exception the API raises. No third-party
+    account (Sentry etc.) is configured, so without this, an error that
+    isn't SMS/DB-log specific has zero visibility beyond a line in
+    journald nobody is watching — this makes it queryable from the admin
+    dashboard instead. Pruned to the last 30 days by a periodic sweep
+    (see scheduler.py), same idempotent-sweep pattern as birthdays/dues."""
+
+    __tablename__ = "error_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(255))
+    exception_type: Mapped[str] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text)
+    traceback: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 class SmsLog(Base):
     """One row per SMS send attempt — powers the admin dashboard's SMS
     view with real counts instead of guessed/static numbers."""

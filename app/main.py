@@ -1,12 +1,14 @@
 import logging
 import os
+import traceback as traceback_module
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from . import config
+from . import config, models
 from .birthdays import run_daily_sweep
 from .database import Base, SessionLocal, engine
 from .dues_reminders import run_sweep as run_dues_reminder_sweep
@@ -73,6 +75,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _record_error(method: str, path: str, exc: Exception) -> None:
+    """Persists to Postgres (not just journald) so an unhandled error is
+    visible from the admin dashboard even with no Sentry/Crashlytics-style
+    account configured. A fresh session, not the failed request's own —
+    that session may itself be the thing that broke."""
+    db = SessionLocal()
+    try:
+        db.add(
+            models.ErrorLog(
+                method=method,
+                path=path,
+                exception_type=type(exc).__name__,
+                message=str(exc)[:2000],
+                traceback="".join(
+                    traceback_module.format_exception(type(exc), exc, exc.__traceback__)
+                )[:10000],
+            )
+        )
+        db.commit()
+    except Exception:
+        logger.exception("Failed to persist error log")
+    finally:
+        db.close()
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     # Starlette's own default for an uncaught exception is a bare-text 500
@@ -81,6 +108,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     # isn't just a client-side mystery) and returns the same JSON shape as
     # every other error response in this API.
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    _record_error(request.method, request.url.path, exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -127,6 +155,20 @@ def _run_dues_reminder_sweep_job() -> None:
         run_dues_reminder_sweep(db)
     except Exception:
         logger.exception("Dues reminder sweep failed")
+    finally:
+        db.close()
+
+
+def _run_error_log_cleanup_job() -> None:
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        db.query(models.ErrorLog).filter(models.ErrorLog.created_at < cutoff).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    except Exception:
+        logger.exception("Error log cleanup failed")
     finally:
         db.close()
 
@@ -233,6 +275,13 @@ def on_startup() -> None:
         _run_dues_reminder_sweep_job, "cron",
         day_of_week="mon", hour=5, minute=0,
         id="dues_reminder_sweep", replace_existing=True,
+    )
+    # Error log retention: keeps the table from growing unbounded — old
+    # entries have no diagnostic value once the deploy that produced them
+    # is long gone.
+    scheduler.add_job(
+        _run_error_log_cleanup_job, "cron",
+        hour=3, minute=15, id="error_log_cleanup", replace_existing=True,
     )
     scheduler.start()
     _run_birthday_sweep_job()

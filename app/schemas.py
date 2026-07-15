@@ -487,3 +487,14 @@ class AnalyticsOut(BaseModel):
     payment_legend: list[PaymentLegendItem]
     attendance_labels: list[str]
     attendance_values: list[int]
+
+
+class ErrorLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    method: str
+    path: str
+    exception_type: str
+    message: str
+    created_at: datetime
