@@ -1,8 +1,9 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from . import config
@@ -44,6 +45,11 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
+if config.SENTRY_ENABLED:
+    import sentry_sdk
+
+    sentry_sdk.init(dsn=config.SENTRY_DSN, traces_sample_rate=0.1)
+
 # The interactive docs advertise the whole API surface to anyone who finds
 # them; keep them off in production and opt in locally with DOCS_ENABLED=1.
 _docs_enabled = os.getenv("DOCS_ENABLED") == "1"
@@ -66,6 +72,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Starlette's own default for an uncaught exception is a bare-text 500
+    # with no body guaranteed and no logging call of its own — this ensures
+    # every unhandled error is both logged with a full traceback (so it
+    # isn't just a client-side mystery) and returns the same JSON shape as
+    # every other error response in this API.
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 app.include_router(auth.router)
 app.include_router(checkin.router)

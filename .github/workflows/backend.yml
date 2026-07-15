@@ -49,6 +49,9 @@ jobs:
       - name: Lint
         run: pyflakes app tests
 
+      - name: Run migrations
+        run: alembic upgrade head
+
       - name: Run tests
         run: pytest tests/ -v
 
@@ -69,6 +72,21 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H 45.140.185.111 >> ~/.ssh/known_hosts
 
+      # rsync --delete below overwrites the currently-live code before the
+      # new version is known to actually work — without this snapshot, a
+      # deploy that fails its health check has nothing to fall back to but
+      # a manual git revert + re-deploy while the API stays down. Excludes
+      # .venv (large, and reinstalled from requirements.txt on rollback
+      # anyway) and only ever holds one deploy back, not a full history.
+      - name: Snapshot current deployment for rollback
+        run: |
+          ssh -i ~/.ssh/deploy_key root@45.140.185.111 '
+            set -e
+            mkdir -p /srv/rotary-backend.rollback
+            rsync -a --delete --exclude .venv --exclude .env \
+              /srv/rotary-backend/ /srv/rotary-backend.rollback/
+          '
+
       - name: Sync code to server
         run: |
           rsync -a --delete \
@@ -82,19 +100,27 @@ jobs:
       # for up to 3 minutes rather than sampling once. NB: the ssh script
       # is single-quoted — no apostrophes inside it, or the quote closes
       # early and the rest of the script runs on the runner instead of the
-      # server.
-      - name: Install deps, restart, verify health
+      # server. If health never comes up, roll back to the pre-deploy
+      # snapshot and restart again so the API recovers on its own — the
+      # job still fails (exit 1) so a human finds out about it.
+      - name: Install deps, migrate, restart, verify health
         run: |
           ssh -i ~/.ssh/deploy_key root@45.140.185.111 '
             set -e
             chown -R rotary:rotary /srv/rotary-backend
             sudo -u rotary /srv/rotary-backend/.venv/bin/pip install -q -r /srv/rotary-backend/requirements.txt
+            cd /srv/rotary-backend && sudo -u rotary /srv/rotary-backend/.venv/bin/alembic upgrade head
             systemctl restart rotary
             for i in $(seq 1 36); do
               sleep 5
               curl -sf http://127.0.0.1:8000/health && exit 0
             done
-            echo "API did not become healthy within 3 minutes" >&2
+            echo "API did not become healthy within 3 minutes -- rolling back" >&2
             journalctl -u rotary -n 50 --no-pager >&2
+            rsync -a --delete --exclude .venv --exclude .env \
+              /srv/rotary-backend.rollback/ /srv/rotary-backend/
+            chown -R rotary:rotary /srv/rotary-backend
+            sudo -u rotary /srv/rotary-backend/.venv/bin/pip install -q -r /srv/rotary-backend/requirements.txt
+            systemctl restart rotary
             exit 1
           '

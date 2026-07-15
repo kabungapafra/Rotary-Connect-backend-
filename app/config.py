@@ -58,3 +58,10 @@ FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 # errored) when unconfigured, so local dev never needs a live project.
 FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON", "")
 PUSH_ENABLED = bool(FIREBASE_CREDENTIALS_JSON)
+
+# Sentry error tracking. Same convention as everything else here: reporting
+# is skipped (not errored) when unconfigured, so local dev and CI never
+# need a live account. Get a DSN free at sentry.io, then set SENTRY_DSN in
+# the server .env — no code change needed to turn this on.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+SENTRY_ENABLED = bool(SENTRY_DSN)
