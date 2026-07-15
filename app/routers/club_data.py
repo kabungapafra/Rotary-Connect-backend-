@@ -16,7 +16,7 @@ from ..event_announcements import (
 from ..push import send_bulk_push, tokens_for_club
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_gallery_image
-from ..utils import get_or_create_meeting, is_club_access_blocked
+from ..utils import compute_week_streak, get_or_create_meeting, is_club_access_blocked
 from .club_members import MANAGER_ROLES
 
 _REMOVE_IMAGE = "__remove__"
@@ -350,6 +350,7 @@ def my_summary(
         member_count=member_count,
         club_status="suspended" if is_club_access_blocked(member.club) else "active",
         checked_in_today=checked_in_today,
+        week_streak=compute_week_streak(db, member),
     )
 
 

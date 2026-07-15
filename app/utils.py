@@ -80,6 +80,46 @@ def compute_payment_status(next_due_date: date | None) -> str:
     return "paid"
 
 
+def compute_week_streak(db: Session, member: "models.Member") -> int:
+    """Consecutive meetings (most recent first, today or earlier) the
+    member either checked into or sent an apology for — an excused
+    absence preserves the streak, same as a Rotary club's own attendance
+    bookkeeping treats a recorded apology, and matches this app already
+    tracking apologies for exactly that reason. Stops at the first
+    meeting with neither a check-in nor an apology on file."""
+    meetings = (
+        db.query(models.Meeting)
+        .filter(models.Meeting.club_id == member.club_id, models.Meeting.date <= date.today())
+        .order_by(models.Meeting.date.desc())
+        .all()
+    )
+    if not meetings:
+        return 0
+
+    checked_in_meeting_ids = {
+        row[0]
+        for row in db.query(models.CheckIn.meeting_id).filter(
+            models.CheckIn.member_id == member.id,
+            models.CheckIn.meeting_id.in_([m.id for m in meetings]),
+        )
+    }
+    apologized_dates = {
+        row[0]
+        for row in db.query(models.Apology.meeting_date).filter(
+            models.Apology.member_id == member.id,
+            models.Apology.meeting_date.in_([m.date for m in meetings]),
+        )
+    }
+
+    streak = 0
+    for meeting in meetings:
+        if meeting.id in checked_in_meeting_ids or meeting.date in apologized_dates:
+            streak += 1
+        else:
+            break
+    return streak
+
+
 def is_club_access_blocked(club: models.Club) -> bool:
     """Whether members of this club should see the Club Suspended screen —
     either the system admin suspended it directly, or its dues went
