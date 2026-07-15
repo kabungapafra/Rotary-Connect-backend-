@@ -34,6 +34,16 @@ from .thank_you import send_pending_thank_yous
 
 logger = logging.getLogger("rotary.main")
 
+# Every module here logs through logging.getLogger("rotary.*"), which
+# propagates to the root logger — uvicorn only configures its own
+# "uvicorn.*" loggers, not root, so without this, INFO-level app logs
+# (migration counts, SMS sends, ...) were silently dropped: only WARNING+
+# ever reached stderr, via Python's handler-less "last resort" fallback.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 # The interactive docs advertise the whole API surface to anyone who finds
 # them; keep them off in production and opt in locally with DOCS_ENABLED=1.
 _docs_enabled = os.getenv("DOCS_ENABLED") == "1"
