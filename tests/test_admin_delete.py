@@ -42,6 +42,8 @@ def test_delete_club_with_every_dependent_row(client, db, test_club, make_member
     db.add(models.Transaction(club_id=test_club.id, kind="income", label="Dues", amount=10000, created_by=president.id))
     db.add(models.Minute(club_id=test_club.id, title="Minutes", meeting_date=date.today(), created_by=president.id))
     db.add(models.Milestone(club_id=test_club.id, year="2026", title="Founded", created_by=president.id))
+    db.add(models.DeviceToken(member_id=president.id, token=f"tok-{uuid.uuid4().hex}", platform="android"))
+    db.add(models.ClubDocument(club_id=test_club.id, title="Constitution", url="https://r2/x.pdf", storage_key="docs/x.pdf", created_by=president.id))
 
     poll = models.Poll(
         club_id=test_club.id, type="motion", title="Approve budget",
@@ -75,6 +77,8 @@ def test_delete_member_with_every_dependent_row(client, db, test_club, make_memb
     db.add(models.Transaction(club_id=test_club.id, kind="expense", label="Venue", amount=5000, created_by=member.id))
     db.add(models.Minute(club_id=test_club.id, title="Minutes", meeting_date=date.today(), created_by=member.id))
     db.add(models.Milestone(club_id=test_club.id, year="2026", title="Award", created_by=member.id))
+    db.add(models.DeviceToken(member_id=member.id, token=f"tok-{uuid.uuid4().hex}", platform="ios"))
+    db.add(models.ClubDocument(club_id=test_club.id, title="Bylaws", url="https://r2/y.pdf", storage_key="docs/y.pdf", created_by=member.id))
 
     poll = models.Poll(
         club_id=test_club.id, type="motion", title="Approve venue",

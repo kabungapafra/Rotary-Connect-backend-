@@ -7,6 +7,7 @@ from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
 from ..sms import send_sms
+from ..storage import delete_gallery_image, delete_gallery_photo
 
 router = APIRouter(
     prefix="/admin/members", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -101,7 +102,18 @@ def delete_member(member_id: int, db: Session = Depends(get_db)):
     db.query(models.Poll).filter(models.Poll.created_by == member_id).delete(
         synchronize_session=False
     )
-    db.query(models.GalleryPhoto).filter(models.GalleryPhoto.uploaded_by == member_id).delete(
+    photos = db.query(models.GalleryPhoto).filter(
+        models.GalleryPhoto.uploaded_by == member_id
+    )
+    for photo in photos:
+        if photo.storage_key:
+            delete_gallery_photo(photo.storage_key)
+    photos.delete(synchronize_session=False)
+    docs = db.query(models.ClubDocument).filter(models.ClubDocument.created_by == member_id)
+    for doc in docs:
+        delete_gallery_image(doc.storage_key)
+    docs.delete(synchronize_session=False)
+    db.query(models.DeviceToken).filter(models.DeviceToken.member_id == member_id).delete(
         synchronize_session=False
     )
     db.query(models.Apology).filter(models.Apology.member_id == member_id).delete(

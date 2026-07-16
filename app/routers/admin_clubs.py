@@ -7,7 +7,7 @@ from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
 from ..sms import send_sms
-from ..storage import delete_gallery_image, store_club_logo
+from ..storage import delete_gallery_image, delete_gallery_photo, store_club_logo
 from ..utils import (
     compute_payment_status,
     format_display_date,
@@ -174,9 +174,22 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.GuestVisit).filter(models.GuestVisit.club_id == club_id).delete(
         synchronize_session=False
     )
-    db.query(models.GalleryPhoto).filter(models.GalleryPhoto.club_id == club_id).delete(
-        synchronize_session=False
-    )
+    photos = db.query(models.GalleryPhoto).filter(models.GalleryPhoto.club_id == club_id)
+    for photo in photos:
+        if photo.storage_key:
+            delete_gallery_photo(photo.storage_key)
+    photos.delete(synchronize_session=False)
+    docs = db.query(models.ClubDocument).filter(models.ClubDocument.club_id == club_id)
+    for doc in docs:
+        delete_gallery_image(doc.storage_key)
+    docs.delete(synchronize_session=False)
+    member_ids = [
+        m.id for m in db.query(models.Member.id).filter(models.Member.club_id == club_id)
+    ]
+    if member_ids:
+        db.query(models.DeviceToken).filter(models.DeviceToken.member_id.in_(member_ids)).delete(
+            synchronize_session=False
+        )
     db.query(models.Apology).filter(models.Apology.club_id == club_id).delete(
         synchronize_session=False
     )
