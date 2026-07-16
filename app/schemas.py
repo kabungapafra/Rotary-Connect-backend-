@@ -479,6 +479,22 @@ class ReportOut(BaseModel):
     sections: list[ReportSection]
 
 
+class ClubAttendanceItem(BaseModel):
+    club_name: str
+    attendance_percent: int
+    meetings_held: int  # last 4 weeks
+    member_count: int
+
+
+class EngagementOut(BaseModel):
+    """Platform activity over the trailing 30 days."""
+
+    checkins_30d: int = 0
+    guest_visits_30d: int = 0
+    apologies_30d: int = 0
+    gallery_uploads_30d: int = 0
+
+
 class AnalyticsOut(BaseModel):
     total_clubs: int
     active_clubs: int
@@ -492,6 +508,8 @@ class AnalyticsOut(BaseModel):
     payment_legend: list[PaymentLegendItem]
     attendance_labels: list[str]
     attendance_values: list[int]
+    club_attendance: list[ClubAttendanceItem] = []
+    engagement: EngagementOut = EngagementOut()
 
 
 class ErrorLogOut(BaseModel):

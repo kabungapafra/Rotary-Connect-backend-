@@ -52,6 +52,41 @@ def test_analytics_counts_reflect_real_data(client, db, test_club, make_member):
     assert len(body["attendance_values"]) == 6
 
 
+def test_analytics_includes_per_club_attendance_and_engagement(
+    client, db, test_club, make_member
+):
+    """The Analytics page's per-club breakdown: a club whose recent meeting
+    had every member check in must appear with a real attendance percent,
+    and the 30-day engagement counters must reflect actual check-ins —
+    otherwise the admin's 'which clubs are alive' view silently lies."""
+    from datetime import date
+
+    member = make_member(role="Member", suffix="141")
+    test_club.members_count = 1
+    db.commit()
+
+    meeting = models.Meeting(club_id=test_club.id, date=date.today(), name="Weekly")
+    db.add(meeting)
+    db.flush()
+    checkin = models.CheckIn(member_id=member.id, meeting_id=meeting.id)
+    db.add(checkin)
+    db.commit()
+
+    res = client.get("/admin/analytics", headers=_admin_auth(db))
+    assert res.status_code == 200
+    body = res.json()
+
+    rows = [c for c in body["club_attendance"] if c["club_name"] == test_club.name]
+    assert rows, "the club must appear in the per-club attendance list"
+    assert rows[0]["attendance_percent"] == 100
+    assert rows[0]["meetings_held"] >= 1
+    assert body["engagement"]["checkins_30d"] >= 1
+
+    db.delete(checkin)
+    db.delete(meeting)
+    db.commit()
+
+
 def test_errors_endpoint_requires_admin_auth(client):
     assert client.get("/admin/analytics/errors").status_code == 401
 

@@ -82,6 +82,53 @@ def analytics(db: Session = Depends(get_db)):
     meetings_today = len(todays_meetings)
     checkins_today = sum(checkins_per_meeting.get(m.id, 0) for m in todays_meetings)
 
+    # Per-club attendance over the last 4 weeks — the "which clubs are
+    # engaged, which are going quiet" breakdown the totals above hide.
+    four_weeks_ago = today - timedelta(weeks=4)
+    club_names = {c.id: c.name for c in clubs}
+    club_attendance: list[schemas.ClubAttendanceItem] = []
+    for club_id, club_name in club_names.items():
+        recent = [m for m in meetings if m.club_id == club_id and m.date >= four_weeks_ago]
+        denom = club_member_counts.get(club_id, 1)
+        if recent:
+            pct = round(
+                sum(
+                    min(100.0, checkins_per_meeting.get(m.id, 0) / denom * 100)
+                    for m in recent
+                )
+                / len(recent)
+            )
+        else:
+            pct = 0
+        club_attendance.append(
+            schemas.ClubAttendanceItem(
+                club_name=club_name,
+                attendance_percent=pct,
+                meetings_held=len(recent),
+                member_count=next(
+                    (c.members_count for c in clubs if c.id == club_id), 0
+                ),
+            )
+        )
+    club_attendance.sort(key=lambda item: item.attendance_percent, reverse=True)
+
+    cutoff_30d = datetime.now(timezone.utc) - timedelta(days=30)
+    date_30d = today - timedelta(days=30)
+    engagement = schemas.EngagementOut(
+        checkins_30d=db.query(models.CheckIn)
+        .filter(models.CheckIn.checked_in_at >= cutoff_30d)
+        .count(),
+        guest_visits_30d=db.query(models.GuestVisit)
+        .filter(models.GuestVisit.visit_date >= date_30d)
+        .count(),
+        apologies_30d=db.query(models.Apology)
+        .filter(models.Apology.meeting_date >= date_30d)
+        .count(),
+        gallery_uploads_30d=db.query(models.GalleryPhoto)
+        .filter(models.GalleryPhoto.created_at >= cutoff_30d)
+        .count(),
+    )
+
     return schemas.AnalyticsOut(
         total_clubs=total_clubs,
         active_clubs=active_clubs,
@@ -95,6 +142,8 @@ def analytics(db: Session = Depends(get_db)):
         payment_legend=payment_legend,
         attendance_labels=attendance_labels,
         attendance_values=attendance_values,
+        club_attendance=club_attendance,
+        engagement=engagement,
     )
 
 
