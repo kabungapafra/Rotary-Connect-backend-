@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -108,4 +108,41 @@ def recent_errors(db: Session = Depends(get_db)):
         .order_by(models.ErrorLog.created_at.desc())
         .limit(50)
         .all()
+    )
+
+
+@router.get("/monitoring", response_model=schemas.MonitoringOut)
+def monitoring(db: Session = Depends(get_db)):
+    """Everything the System Health page shows besides its live /health
+    probe: member-side problems (failed PINs, lockouts, PIN resets) with
+    the member and club named where the identifier matched someone, and
+    the slow/5xx request log recorded by main.py's timing middleware."""
+    events = (
+        db.query(models.MemberEvent)
+        .order_by(models.MemberEvent.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    slow = (
+        db.query(models.SlowRequest)
+        .order_by(models.SlowRequest.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    events_today = (
+        db.query(models.MemberEvent)
+        .filter(models.MemberEvent.created_at >= today_start)
+        .count()
+    )
+    slow_today = (
+        db.query(models.SlowRequest)
+        .filter(models.SlowRequest.created_at >= today_start)
+        .count()
+    )
+    return schemas.MonitoringOut(
+        member_events=events,
+        slow_requests=slow,
+        events_today=events_today,
+        slow_today=slow_today,
     )

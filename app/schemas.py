@@ -503,3 +503,33 @@ class ErrorLogOut(BaseModel):
     exception_type: str
     message: str
     created_at: datetime
+
+
+class MemberEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: str
+    identifier: str
+    member_name: str | None
+    club_name: str | None
+    detail: str
+    created_at: datetime
+
+
+class SlowRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    method: str
+    path: str
+    status_code: int
+    duration_ms: int
+    created_at: datetime
+
+
+class MonitoringOut(BaseModel):
+    member_events: list[MemberEventOut]
+    slow_requests: list[SlowRequestOut]
+    events_today: int
+    slow_today: int

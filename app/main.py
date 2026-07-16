@@ -75,6 +75,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Requests slower than this (or any 5xx) get a slow_requests row so the
+# admin System Health page can show a dying/slow API after the fact.
+# Module-level (not captured in a closure) so tests can lower it to 0.
+SLOW_REQUEST_MS = int(os.getenv("SLOW_REQUEST_MS", "1500"))
+
+
+@app.middleware("http")
+async def record_slow_requests(request: Request, call_next):
+    import time as time_module
+
+    start = time_module.monotonic()
+    response = await call_next(request)
+    duration_ms = int((time_module.monotonic() - start) * 1000)
+    if request.method != "OPTIONS" and (
+        duration_ms >= SLOW_REQUEST_MS or response.status_code >= 500
+    ):
+        db = SessionLocal()
+        try:
+            db.add(
+                models.SlowRequest(
+                    method=request.method,
+                    path=request.url.path[:255],
+                    status_code=response.status_code,
+                    duration_ms=duration_ms,
+                )
+            )
+            db.commit()
+        except Exception:
+            logger.exception("Failed to persist slow-request log")
+        finally:
+            db.close()
+    return response
+
+
 def _record_error(method: str, path: str, exc: Exception) -> None:
     """Persists to Postgres (not just journald) so an unhandled error is
     visible from the admin dashboard even with no Sentry/Crashlytics-style
@@ -164,6 +198,12 @@ def _run_error_log_cleanup_job() -> None:
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         db.query(models.ErrorLog).filter(models.ErrorLog.created_at < cutoff).delete(
+            synchronize_session=False
+        )
+        db.query(models.MemberEvent).filter(models.MemberEvent.created_at < cutoff).delete(
+            synchronize_session=False
+        )
+        db.query(models.SlowRequest).filter(models.SlowRequest.created_at < cutoff).delete(
             synchronize_session=False
         )
         db.commit()

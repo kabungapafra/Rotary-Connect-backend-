@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from .. import schemas, security
+from .. import models, schemas, security
 from ..birthdays import wish_if_due
 from ..database import get_db
 from ..rate_limit import (
@@ -36,6 +36,30 @@ _FORGOT_PIN_MEMBER_WINDOW_SECONDS = 30 * 24 * 3600
 _FORGOT_PIN_MEMBER_MAX_PER_WINDOW = 3
 
 
+def _record_member_event(
+    db: Session,
+    kind: str,
+    identifier: str,
+    detail: str,
+    member=None,
+) -> None:
+    """Best-effort trail for the admin System Health page — a member-side
+    problem must never turn into a member-side failure of its own."""
+    try:
+        db.add(
+            models.MemberEvent(
+                kind=kind,
+                identifier=identifier.strip()[:120],
+                member_name=member.name if member is not None else None,
+                club_name=member.club.name if member is not None else None,
+                detail=detail[:255],
+            )
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 — logging only, never break auth
+        db.rollback()
+
+
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(
     payload: schemas.LoginRequest,
@@ -49,6 +73,11 @@ def login(
 
     account_key = f"login_id:{payload.identifier.strip().lower()}"
     if is_locked_out(db, account_key, _LOCKOUT_MAX_ATTEMPTS, _LOCKOUT_WINDOW_SECONDS):
+        _record_member_event(
+            db, "login_locked_out", payload.identifier,
+            "Account locked for 15 minutes after too many failed PIN attempts",
+            member=security.find_member_by_identifier(db, payload.identifier),
+        )
         raise HTTPException(
             status_code=429,
             detail="Too many failed attempts on this account — try again in 15 minutes",
@@ -57,6 +86,12 @@ def login(
     member = security.find_member_by_identifier(db, payload.identifier)
     if member is None or not security.verify_pin(payload.pin, member.pin_hash):
         record_failed_attempt(db, account_key)
+        _record_member_event(
+            db, "login_failed", payload.identifier,
+            "Wrong PIN entered" if member is not None
+            else "Unknown member number/phone",
+            member=member,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid member number/phone or PIN",
@@ -118,6 +153,10 @@ def forgot_pin(
     new_pin = generate_pin()
     member.pin_hash = security.hash_pin(new_pin)
     db.commit()
+    _record_member_event(
+        db, "pin_reset_requested", payload.identifier,
+        "Self-service PIN reset — new PIN sent by SMS", member=member,
+    )
     background_tasks.add_task(
         send_sms,
         member.phone,

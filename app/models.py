@@ -247,6 +247,46 @@ class ErrorLog(Base):
     )
 
 
+class MemberEvent(Base):
+    """A member-facing problem (failed PIN, account lockout, self-service
+    PIN reset, ...) shown on the admin System Health page. Deliberately
+    FK-free — member/club are stored as plain strings — so rows survive
+    member and club deletion and never add another table to the manual
+    FK cleanup in the admin delete endpoints. Pruned to 30 days by the
+    same sweep as error_logs."""
+
+    __tablename__ = "member_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40))  # login_failed | login_locked_out | pin_reset_requested
+    # What the person typed into the identifier field (member number/phone).
+    identifier: Mapped[str] = mapped_column(String(120))
+    member_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    club_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    detail: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class SlowRequest(Base):
+    """One row per API request that finished slower than the threshold in
+    main.py (or returned a 5xx) — the admin System Health page's evidence
+    of a dying or slow API, next to the live /health latency probe the
+    dashboard measures itself. Pruned to 30 days with error_logs."""
+
+    __tablename__ = "slow_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(255))
+    status_code: Mapped[int] = mapped_column(Integer)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 class SmsLog(Base):
     """One row per SMS send attempt — powers the admin dashboard's SMS
     view with real counts instead of guessed/static numbers."""
