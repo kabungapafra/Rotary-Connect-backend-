@@ -61,6 +61,7 @@ class GuestCheckInRequest(BaseModel):
 
 class GuestCheckInResponse(BaseModel):
     ok: bool
+    club_id: int
     club_name: str
 
 
@@ -210,6 +211,18 @@ class EventOut(BaseModel):
     name: str
     meta: str
     image: str | None = None  # public R2 URL
+
+
+class VisitorClubOut(BaseModel):
+    """Public profile of a club for the app's visitor dashboard — only
+    display data a club already puts on its printed QR poster and public
+    announcements, never member data."""
+
+    club_id: int
+    name: str
+    logo: str | None = None
+    club_type: str
+    events: list[EventOut]
 
 
 class EventCreate(BaseModel):

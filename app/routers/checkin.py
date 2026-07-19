@@ -164,7 +164,7 @@ def guest_check_in(
     if already:
         # Already logged (and thanked) today — idempotent no-op rather than
         # an error, so a retried request from a flaky connection is safe.
-        return schemas.GuestCheckInResponse(ok=True, club_name=club.name)
+        return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
 
     visit = models.GuestVisit(
         club_id=club.id,
@@ -176,7 +176,35 @@ def guest_check_in(
     )
     db.add(visit)
     db.commit()
-    return schemas.GuestCheckInResponse(ok=True, club_name=club.name)
+    return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
+
+
+@router.get("/club/{club_id}", response_model=schemas.VisitorClubOut)
+def visitor_club(club_id: int, request: Request, db: Session = Depends(get_db)):
+    """Unauthenticated: the visitor dashboard the app shows after a guest
+    checks in at a club (and on later launches, until they scan a different
+    club). Exposes only what the club already publishes — name, logo,
+    branding type, and its events — never members or attendance. Per-IP
+    rate limited so it can't be used to bulk-harvest every club's profile."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not rate_limit_ok(db, f"visitorclub:{client_ip}", 30, _GUEST_WINDOW_SECONDS):
+        raise HTTPException(status_code=429, detail="Too many requests — try again shortly")
+    club = db.get(models.Club, club_id)
+    if club is None:
+        raise HTTPException(status_code=404, detail="Club not found")
+    events = (
+        db.query(models.Event)
+        .filter(models.Event.club_id == club.id)
+        .order_by(models.Event.id)
+        .all()
+    )
+    return schemas.VisitorClubOut(
+        club_id=club.id,
+        name=club.name,
+        logo=club.logo,
+        club_type=club.club_type,
+        events=events,
+    )
 
 
 @router.get("/today", response_model=schemas.TodayResponse)

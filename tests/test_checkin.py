@@ -161,3 +161,20 @@ def test_today_ignores_a_client_supplied_club_id(client, db, make_member):
         synchronize_session=False
     )
     db.commit()
+
+
+def test_visitor_club_profile_is_public_display_data_only(client, test_club):
+    """The visitor dashboard endpoint must work with no auth (walk-ins have
+    no account) but expose only what the club already publishes — never
+    members or attendance."""
+    res = client.get(f"/checkin/club/{test_club.id}")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["club_id"] == test_club.id
+    assert body["name"] == test_club.name
+    assert "events" in body
+    assert "members" not in body
+
+
+def test_visitor_club_profile_unknown_club_is_404(client):
+    assert client.get("/checkin/club/999999").status_code == 404
