@@ -97,7 +97,7 @@ def create_club(
             status="active",
             email=payload.president_email.strip(),
             phone=president_phone,
-            dob="",
+            dob=payload.president_dob.strip(),
             pin_hash=security.hash_pin(pin),
         )
         db.add(president)

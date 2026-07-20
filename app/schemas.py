@@ -138,6 +138,7 @@ class ClubCreate(BaseModel):
     president_name: str = ""
     president_email: str = ""
     president_phone: str = ""
+    president_dob: str = ""
 
 
 class PresidentCredentials(BaseModel):
