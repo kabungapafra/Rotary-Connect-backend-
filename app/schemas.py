@@ -174,6 +174,16 @@ class AdminMemberOut(BaseModel):
     status: str
 
 
+class AdminMemberCreate(BaseModel):
+    club_id: int
+    name: str
+    role: str = "Member"
+    email: str = ""
+    phone: str
+    dob: str = ""
+    is_board: bool = False
+
+
 class MemberStatusUpdate(BaseModel):
     status: str  # active | suspended
 

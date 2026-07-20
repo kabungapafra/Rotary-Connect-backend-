@@ -8,6 +8,7 @@ from ..database import get_db
 from ..security import get_current_admin
 from ..sms import send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo
+from ..utils import generate_member_number, generate_pin
 
 router = APIRouter(
     prefix="/admin/members", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -52,6 +53,53 @@ def list_members(
     if club != "all":
         members = [m for m in members if m.club.name == club]
     return [_to_out(m) for m in members]
+
+
+@router.post("", response_model=schemas.ClubMemberCreateResponse)
+def create_member(
+    payload: schemas.AdminMemberCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Lets the system admin add a member to any club directly — e.g. to
+    bootstrap a club whose only member (the auto-created president) was
+    since removed, without routing through that club's own president."""
+    club = db.get(models.Club, payload.club_id)
+    if club is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Club not found")
+    name = payload.name.strip()
+    phone = payload.phone.strip()
+    if not name or not phone:
+        raise HTTPException(status_code=422, detail="Name and phone are required")
+    if db.query(models.Member).filter(models.Member.phone == phone).first():
+        raise HTTPException(
+            status_code=422, detail="A member with this phone number already exists"
+        )
+
+    pin = generate_pin()
+    new_member = models.Member(
+        club_id=club.id,
+        member_number=generate_member_number(db),
+        name=name,
+        role=payload.role.strip() or "Member",
+        is_board=payload.is_board,
+        status="active",
+        email=payload.email.strip(),
+        phone=phone,
+        dob=payload.dob.strip(),
+        pin_hash=security.hash_pin(pin),
+    )
+    db.add(new_member)
+    db.commit()
+    db.refresh(new_member)
+    background_tasks.add_task(
+        send_sms,
+        phone,
+        f"Welcome to {club.name}! Your Rotary Connect login: "
+        f"Member No. {new_member.member_number}, PIN {pin}. "
+        f"Download the app and sign in to get started.",
+    )
+    return schemas.ClubMemberCreateResponse(member=new_member, pin=pin)
 
 
 @router.patch("/{member_id}/status", response_model=schemas.AdminMemberOut)
