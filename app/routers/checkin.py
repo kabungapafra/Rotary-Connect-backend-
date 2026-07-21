@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy import func
@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..birthdays import wish_if_due
 from ..database import get_db
-from ..event_announcements import local_time_on_date_utc, parse_event_time
+from ..event_announcements import (
+    CHECKIN_LEAD_MINUTES,
+    CHECKIN_WINDOW_MINUTES,
+    checkin_window_utc,
+    parse_event_time,
+)
 from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..seed import DEFAULT_CLUB_NAME
@@ -17,11 +22,6 @@ from ..utils import get_or_create_meeting
 router = APIRouter(prefix="/checkin", tags=["checkin"])
 
 DEFAULT_MEETING_NAME = "Weekly Fellowship Meeting"
-
-# Check-in is only allowed in a window around today's scheduled event time —
-# early enough to be useful at the door, but not open all day.
-_CHECKIN_LEAD_MINUTES = 15
-_CHECKIN_WINDOW_MINUTES = 60
 
 
 def _check_in_window_error(club_id: int, db: Session) -> str | None:
@@ -45,16 +45,14 @@ def _check_in_window_error(club_id: int, db: Session) -> str | None:
         if parsed is None:
             continue
         checked_any = True
-        start = local_time_on_date_utc(*parsed, today)
-        if start - timedelta(minutes=_CHECKIN_LEAD_MINUTES) <= now <= start + timedelta(
-            minutes=_CHECKIN_WINDOW_MINUTES
-        ):
+        opens_at, closes_at = checkin_window_utc(*parsed, today)
+        if opens_at <= now <= closes_at:
             return None
     if not checked_any:
         return None
     return (
-        f"Check-in opens {_CHECKIN_LEAD_MINUTES} minutes before the meeting "
-        f"and closes {_CHECKIN_WINDOW_MINUTES // 60} hour after it starts."
+        f"Check-in opens {CHECKIN_LEAD_MINUTES} minutes before the meeting "
+        f"and closes {CHECKIN_WINDOW_MINUTES // 60} hour after it starts."
     )
 
 

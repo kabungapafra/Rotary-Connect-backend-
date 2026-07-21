@@ -347,6 +347,7 @@ class NextMeetingOut(BaseModel):
     venue: str
     time_label: str
     date_iso: str
+    ongoing: bool = False
 
 
 class ApologyCreate(BaseModel):

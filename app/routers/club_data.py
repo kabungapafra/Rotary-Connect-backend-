@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas
 from ..database import get_db
 from ..event_announcements import (
+    CHECKIN_LEAD_MINUTES,
+    checkin_window_utc,
     next_occurrence_utc,
     parse_event_time,
     schedule_event_announcement,
@@ -78,19 +80,47 @@ def next_meeting(
     events — real date/time/venue computed from each event's day-of-week
     and parsed time, not a static placeholder. Once today's/this-week's
     occurrence has passed, `next_occurrence_utc` naturally rolls to next
-    week, so this always reflects what's actually next."""
+    week, so this always reflects what's actually next.
+
+    Exception: while an event's check-in window is still open (same window
+    `checkin.py` gates check-in on — opens 15 min before start, closes 1
+    hour after), that event is still "the next meeting" and is returned
+    with `ongoing=True`, instead of `next_occurrence_utc` already having
+    rolled it to next week."""
     events = db.query(models.Event).filter(models.Event.club_id == member.club_id).all()
     if not events:
         raise HTTPException(status_code=404, detail="No events scheduled for this club yet")
 
-    best_event = None
-    best_dt = None
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    todays_dow = today.strftime("%a").upper()
+
+    ongoing_event = None
+    ongoing_dt = None
     for event in events:
+        if event.dow != todays_dow:
+            continue
         parsed = parse_event_time(event.meta)
-        hour, minute = parsed if parsed else (12, 0)
-        next_dt = next_occurrence_utc(event.dow, hour, minute)
-        if best_dt is None or next_dt < best_dt:
-            best_dt, best_event = next_dt, event
+        if parsed is None:
+            continue
+        opens_at, closes_at = checkin_window_utc(*parsed, today)
+        if opens_at <= now <= closes_at:
+            start = opens_at + timedelta(minutes=CHECKIN_LEAD_MINUTES)
+            if ongoing_dt is None or start < ongoing_dt:
+                ongoing_dt, ongoing_event = start, event
+
+    if ongoing_event is not None:
+        best_event, best_dt, ongoing = ongoing_event, ongoing_dt, True
+    else:
+        best_event = None
+        best_dt = None
+        for event in events:
+            parsed = parse_event_time(event.meta)
+            hour, minute = parsed if parsed else (12, 0)
+            next_dt = next_occurrence_utc(event.dow, hour, minute, now=now)
+            if best_dt is None or next_dt < best_dt:
+                best_dt, best_event = next_dt, event
+        ongoing = False
 
     local_dt = best_dt + timedelta(hours=3)  # Africa/Kampala, fixed UTC+3
     parsed = parse_event_time(best_event.meta)
@@ -101,6 +131,7 @@ def next_meeting(
         venue=venue_from_meta(best_event.meta),
         time_label=time_label,
         date_iso=local_dt.date().isoformat(),
+        ongoing=ongoing,
     )
 
 

@@ -31,6 +31,13 @@ _EAT_OFFSET_HOURS = 3  # Africa/Kampala is a fixed UTC+3, year-round.
 _REMINDER_LEAD_HOURS = 4
 _THANK_YOU_LAG_HOURS = 1
 
+# Check-in (and the Home screen's "ongoing" badge) is only open in a window
+# around a meeting's scheduled start — early enough to be useful at the
+# door, but not open all day. Shared by checkin.py and club_data.py so the
+# two never drift apart.
+CHECKIN_LEAD_MINUTES = 15
+CHECKIN_WINDOW_MINUTES = 60
+
 _DOW_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 _APS_DOW = {d: d.lower() for d in _DOW_ORDER}
 
@@ -110,6 +117,18 @@ def local_time_on_date_utc(local_hour: int, local_minute: int, on_date: date) ->
     return datetime(
         target_date.year, target_date.month, target_date.day,
         utc_hour, local_minute, tzinfo=timezone.utc,
+    )
+
+
+def checkin_window_utc(
+    local_hour: int, local_minute: int, on_date: date
+) -> tuple[datetime, datetime]:
+    """(opens_at, closes_at) in UTC for the check-in window around a
+    meeting starting at `local_hour:local_minute` on `on_date`."""
+    start = local_time_on_date_utc(local_hour, local_minute, on_date)
+    return (
+        start - timedelta(minutes=CHECKIN_LEAD_MINUTES),
+        start + timedelta(minutes=CHECKIN_WINDOW_MINUTES),
     )
 
 
