@@ -30,6 +30,7 @@ class MemberOut(BaseModel):
     phone: str
     dob: str
     terminated_at: date | None = None
+    needs_board_setup: bool = False
 
 
 class LoginResponse(BaseModel):

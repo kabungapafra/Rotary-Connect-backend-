@@ -13,6 +13,7 @@ from .birthdays import run_daily_sweep
 from .database import Base, SessionLocal, engine
 from .dues_reminders import run_sweep as run_dues_reminder_sweep
 from .event_announcements import reschedule_all_event_announcements
+from .leadership_transition import run_leadership_transitions
 from .routers import (
     admin_analytics,
     admin_auth,
@@ -193,6 +194,16 @@ def _run_dues_reminder_sweep_job() -> None:
         db.close()
 
 
+def _run_leadership_transition_job() -> None:
+    db = SessionLocal()
+    try:
+        run_leadership_transitions(db)
+    except Exception:
+        logger.exception("Leadership transition sweep failed")
+    finally:
+        db.close()
+
+
 def _run_error_log_cleanup_job() -> None:
     db = SessionLocal()
     try:
@@ -323,10 +334,18 @@ def on_startup() -> None:
         _run_error_log_cleanup_job, "cron",
         hour=3, minute=15, id="error_log_cleanup", replace_existing=True,
     )
+    # Rotary-year leadership handover: idempotent per club (see
+    # leadership_transition.py), so a daily run is enough to catch July 1
+    # even across a deploy/restart gap.
+    scheduler.add_job(
+        _run_leadership_transition_job, "cron",
+        hour=4, minute=30, id="leadership_transition", replace_existing=True,
+    )
     scheduler.start()
     _run_birthday_sweep_job()
     _run_thank_you_sweep_job()
     _run_dues_reminder_sweep_job()
+    _run_leadership_transition_job()
 
     with SessionLocal() as db:
         reschedule_all_event_announcements(db)

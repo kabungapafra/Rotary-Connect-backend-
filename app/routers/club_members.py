@@ -112,6 +112,11 @@ def update_member(
 
     if payload.role is not None:
         target.role = payload.role.strip() or "Member"
+        # Assigning the new President-Elect is the key step the "assign
+        # board positions" prompt exists for — clear it the moment that's
+        # done, rather than making the President dismiss it separately too.
+        if target.role == "President-Elect" and member.needs_board_setup:
+            member.needs_board_setup = False
     if payload.is_board is not None:
         target.is_board = payload.is_board
     if payload.status is not None:
@@ -132,3 +137,17 @@ def update_member(
     db.commit()
     db.refresh(target)
     return target
+
+
+@router.post("/dismiss-board-setup", response_model=schemas.MemberOut)
+def dismiss_board_setup(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Lets a newly-promoted President dismiss the "assign board
+    positions" prompt without completing it now — they can still get to
+    the assignment screen anytime from the Members list."""
+    member.needs_board_setup = False
+    db.commit()
+    db.refresh(member)
+    return member

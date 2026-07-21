@@ -74,6 +74,11 @@ class Club(Base):
     fee_amount: Mapped[int] = mapped_column(Integer, default=0)
     last_paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     next_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Calendar year (e.g. 2026) this club's Rotary-year leadership handover
+    # (President-Elect -> President, President -> IPP, ...) last ran — lets
+    # the daily sweep (app/leadership_transition.py) skip clubs it's already
+    # handled this Rotary year without a separate one-shot-at-July-1 job.
+    last_leadership_transition_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -120,6 +125,11 @@ class Member(Base):
     # reminder for — same idempotency trick as last_birthday_wished, so the
     # weekly sweep can run as often as it likes without repeat-nagging.
     last_dues_reminded: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Set True on whoever the Rotary-year leadership sweep just promoted to
+    # President — prompts the app's dismissible "assign board positions"
+    # banner. Cleared by explicitly dismissing it or by assigning a new
+    # President-Elect (see routers/club_members.py update_member).
+    needs_board_setup: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
