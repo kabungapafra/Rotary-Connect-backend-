@@ -164,6 +164,14 @@ def guest_check_in(
         # an error, so a retried request from a flaky connection is safe.
         return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
 
+    # Same door-side window a member check-in is held to (opens
+    # CHECKIN_LEAD_MINUTES before the meeting, closes CHECKIN_WINDOW_MINUTES
+    # after) — a guest scanning the club QR isn't a separate, unguarded path
+    # to logging attendance whenever.
+    window_error = _check_in_window_error(club.id, db)
+    if window_error is not None:
+        raise HTTPException(status_code=422, detail=window_error)
+
     visit = models.GuestVisit(
         club_id=club.id,
         name=name,

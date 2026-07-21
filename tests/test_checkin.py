@@ -8,7 +8,7 @@ club's roster (the fix for the unauthenticated cross-club enumeration —
 a request must not be able to pull a different club's data by passing a
 club_id, regardless of which club's data would otherwise be returned)."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app import models, security
 from app.seed import DEFAULT_CLUB_NAME
@@ -87,6 +87,42 @@ def test_guest_check_in_rejects_unknown_club(client):
         json={"club_id": 999999, "name": "Nobody", "phone": "0772000098"},
     )
     assert res.status_code == 404
+
+
+def test_guest_check_in_respects_the_meeting_window(client, test_club, db, make_event):
+    """Guest check-in (the in-app "scan the club QR" flow for walk-ins) must
+    be held to the same door-side window as a logged-in member's self
+    check-in — it was previously unguarded, letting a guest check in at any
+    time of day regardless of whether a meeting was actually happening."""
+    todays_dow = date.today().strftime("%a").upper()
+    now_utc = datetime.now(timezone.utc)
+
+    # A meeting time ~4 hours away in UTC terms — comfortably outside the
+    # 15-min-before/60-min-after window on either side, independent of
+    # exact minute rounding.
+    far_local_hour = (now_utc.hour + 4 + 3) % 24  # +3 for the fixed EAT offset
+    event = make_event(dow=todays_dow, meta=f"{far_local_hour}:00 - Hall")
+
+    res = client.post(
+        "/checkin/guest",
+        json={"club_id": test_club.id, "name": "Too Early Guest", "phone": "0772000096"},
+    )
+    assert res.status_code == 422
+    assert "opens" in res.json()["detail"].lower()
+
+    # Move the same event's start to right now — the window opens.
+    event.meta = f"{(now_utc.hour + 3) % 24}:{now_utc.minute:02d} - Hall"
+    db.commit()
+
+    res = client.post(
+        "/checkin/guest",
+        json={"club_id": test_club.id, "name": "On Time Guest", "phone": "0772000096"},
+    )
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    db.query(models.GuestVisit).filter(models.GuestVisit.club_id == test_club.id).delete()
+    db.commit()
 
 
 def test_guest_check_in_throttles_after_five_requests_per_ip(client, test_club, db):
