@@ -474,6 +474,22 @@ def submit_apology(
         except ValueError:
             raise HTTPException(status_code=422, detail="meeting_date must be YYYY-MM-DD")
     meeting = get_or_create_meeting(db, member.club_id, on_date)
+    # "Can't attend" makes no sense from someone who already attended — a
+    # checked-in member sending an apology would put them on both sides of
+    # the register at once.
+    already_in = (
+        db.query(models.CheckIn)
+        .filter(
+            models.CheckIn.member_id == member.id,
+            models.CheckIn.meeting_id == meeting.id,
+        )
+        .first()
+    )
+    if already_in:
+        raise HTTPException(
+            status_code=422,
+            detail="You're already checked in for this meeting — no apology needed.",
+        )
     existing = (
         db.query(models.Apology)
         .filter(models.Apology.member_id == member.id, models.Apology.meeting_date == meeting.date)
