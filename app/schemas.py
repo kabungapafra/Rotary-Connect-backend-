@@ -83,11 +83,26 @@ class CheckInResponse(BaseModel):
     meeting_name: str
 
 
+class MeetingGuest(BaseModel):
+    """A non-member on the register: a walk-in who scanned the club QR
+    ("scan") or someone who registered through an event's public web RSVP
+    form ("web")."""
+
+    name: str
+    type: str  # Guest / Prospective member / Visiting Rotarian / ...
+    club_name: str  # a Visiting Rotarian's own club, else ""
+    time: str
+    via: str  # "scan" | "web"
+
+
 class TodayResponse(BaseModel):
     meeting_name: str
     date: str
     member_count: int
     members: list[CheckInMemberOut]
+    # Today's non-members: walk-in guests and web RSVPs targeting today —
+    # same shape the meetings register uses.
+    guests: list[MeetingGuest] = []
 
 
 # ── admin ───────────────────────────────────────────────────────────────
@@ -299,18 +314,6 @@ class MeetingAttendee(BaseModel):
     name: str
     role: str
     time: str
-
-
-class MeetingGuest(BaseModel):
-    """A non-member on the register: a walk-in who scanned the club QR
-    ("scan") or someone who registered through an event's public web RSVP
-    form ("web")."""
-
-    name: str
-    type: str  # Guest / Prospective member / Visiting Rotarian / ...
-    club_name: str  # a Visiting Rotarian's own club, else ""
-    time: str
-    via: str  # "scan" | "web"
 
 
 class MeetingOut(BaseModel):

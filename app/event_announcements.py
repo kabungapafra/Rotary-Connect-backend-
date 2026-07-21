@@ -132,6 +132,14 @@ def checkin_window_utc(
     )
 
 
+def rsvp_target_date(dow: str, created: date) -> date:
+    """The meeting date a web RSVP is for: the first occurrence of the
+    event's weekly dow on/after the day the RSVP was made (same day
+    counts)."""
+    idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
+    return created + timedelta(days=(idx - created.weekday()) % 7)
+
+
 def _shifted_cron(
     dow: str, local_hour: int, local_minute: int, shift_hours: int
 ) -> tuple[str, int, int]:

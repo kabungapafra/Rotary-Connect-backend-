@@ -151,13 +151,25 @@ def test_today_shows_the_authenticated_members_own_club(client, db, make_member,
     """A logged-in member's "Who's here" view must show THEIR club's
     roster. Previously /today ignored auth entirely and always resolved to
     the seeded default club, so a real member's own check-in never showed
-    up here — not even to themselves."""
+    up here — not even to themselves. It must also carry the full day's
+    register — walk-in guests and web RSVPs targeting today — which used
+    to be missing entirely."""
     member = make_member(suffix="092")
     meeting = models.Meeting(club_id=test_club.id, name="My Club Meeting", date=date.today())
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
     db.add(models.CheckIn(member_id=member.id, meeting_id=meeting.id))
+    db.add(
+        models.GuestVisit(
+            club_id=test_club.id,
+            name="Visiting Vince",
+            phone="256700444555",
+            guest_type="Visiting Rotarian",
+            member_club="Rotary Club of Kira",
+            visit_date=date.today(),
+        )
+    )
     db.commit()
 
     res = client.get("/checkin/today", headers=_auth(member))
@@ -166,7 +178,11 @@ def test_today_shows_the_authenticated_members_own_club(client, db, make_member,
     assert body["meeting_name"] == "My Club Meeting"
     names = {m["name"] for m in body["members"]}
     assert member.name in names
+    guests = {g["name"]: g for g in body["guests"]}
+    assert guests["Visiting Vince"]["club_name"] == "Rotary Club of Kira"
+    assert guests["Visiting Vince"]["via"] == "scan"
 
+    db.query(models.GuestVisit).filter(models.GuestVisit.club_id == test_club.id).delete()
     db.query(models.CheckIn).filter(models.CheckIn.meeting_id == meeting.id).delete()
     db.query(models.Meeting).filter(models.Meeting.id == meeting.id).delete()
     db.commit()

@@ -11,6 +11,7 @@ from ..event_announcements import (
     checkin_window_utc,
     next_occurrence_utc,
     parse_event_time,
+    rsvp_target_date,
     schedule_event_announcement,
     unschedule_event_announcement,
     venue_from_meta,
@@ -311,16 +312,6 @@ def delete_project(
 
 # ── meetings history & member summary ───────────────────────────────────
 
-_DOW_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-
-
-def _rsvp_target_date(dow: str, created: date) -> date:
-    """The meeting date an RSVP is for: the first occurrence of the event's
-    weekly dow on/after the day the RSVP was made (same day counts)."""
-    idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
-    return created + timedelta(days=(idx - created.weekday()) % 7)
-
-
 @router.get("/meetings", response_model=list[schemas.MeetingOut])
 def list_meetings(
     db: Session = Depends(get_db),
@@ -389,7 +380,7 @@ def list_meetings(
                 .all()
             )
             for r in rsvps:
-                target = _rsvp_target_date(club_events[r.event_id].dow, r.created_at.date())
+                target = rsvp_target_date(club_events[r.event_id].dow, r.created_at.date())
                 if target in meeting_dates:
                     guests_by_date[target].append(
                         schemas.MeetingGuest(

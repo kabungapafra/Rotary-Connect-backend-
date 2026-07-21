@@ -12,6 +12,7 @@ from ..event_announcements import (
     CHECKIN_WINDOW_MINUTES,
     checkin_window_utc,
     parse_event_time,
+    rsvp_target_date,
 )
 from ..rate_limit import rate_limit_ok
 from ..security import get_current_member, get_optional_member
@@ -238,29 +239,70 @@ def today(
         .filter(models.Meeting.club_id == club_id, models.Meeting.date == today_date)
         .first()
     )
-    if meeting is None:
-        return schemas.TodayResponse(
-            meeting_name=DEFAULT_MEETING_NAME,
-            date=today_date.isoformat(),
-            member_count=0,
-            members=[],
-        )
 
-    rows = (
-        db.query(models.CheckIn)
-        .filter(models.CheckIn.meeting_id == meeting.id)
-        .order_by(models.CheckIn.checked_in_at)
-        .all()
-    )
-    members = [
-        schemas.CheckInMemberOut(
-            name=row.member.name, role=row.member.role, checked_in_at=row.checked_in_at
+    members: list[schemas.CheckInMemberOut] = []
+    if meeting is not None:
+        rows = (
+            db.query(models.CheckIn)
+            .filter(models.CheckIn.meeting_id == meeting.id)
+            .order_by(models.CheckIn.checked_in_at)
+            .all()
         )
-        for row in rows
-    ]
+        members = [
+            schemas.CheckInMemberOut(
+                name=row.member.name, role=row.member.role, checked_in_at=row.checked_in_at
+            )
+            for row in rows
+        ]
+
+    # Today's non-members, independent of whether any member has checked in
+    # yet (a guest can be first through the door): walk-in QR guests logged
+    # today, plus web RSVPs whose event occurrence lands on today.
+    guests: list[schemas.MeetingGuest] = []
+    if club_id is not None:
+        for v in (
+            db.query(models.GuestVisit)
+            .filter(
+                models.GuestVisit.club_id == club_id,
+                models.GuestVisit.visit_date == today_date,
+            )
+            .order_by(models.GuestVisit.created_at)
+        ):
+            guests.append(
+                schemas.MeetingGuest(
+                    name=v.name,
+                    type=v.guest_type or "Guest",
+                    club_name=v.member_club,
+                    time=v.created_at.strftime("%H:%M") if v.created_at else "",
+                    via="scan",
+                )
+            )
+        club_events = {
+            e.id: e
+            for e in db.query(models.Event).filter(models.Event.club_id == club_id)
+        }
+        if club_events:
+            for r in (
+                db.query(models.EventRsvp)
+                .filter(models.EventRsvp.event_id.in_(club_events.keys()))
+                .order_by(models.EventRsvp.created_at)
+            ):
+                target = rsvp_target_date(club_events[r.event_id].dow, r.created_at.date())
+                if target == today_date:
+                    guests.append(
+                        schemas.MeetingGuest(
+                            name=r.name,
+                            type=r.attendee_type or "Guest",
+                            club_name=r.club_name,
+                            time=r.created_at.strftime("%H:%M"),
+                            via="web",
+                        )
+                    )
+
     return schemas.TodayResponse(
-        meeting_name=meeting.name,
+        meeting_name=meeting.name if meeting else DEFAULT_MEETING_NAME,
         date=today_date.isoformat(),
         member_count=len(members),
         members=members,
+        guests=guests,
     )
