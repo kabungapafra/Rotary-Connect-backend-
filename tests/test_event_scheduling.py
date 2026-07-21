@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from app.event_announcements import (
     _shifted_cron,
+    is_event_editable,
     is_registration_open,
     next_occurrence_utc,
     parse_event_end_time,
@@ -60,6 +61,24 @@ def test_registration_closes_15_minutes_before_the_end_time():
     assert is_registration_open("WED", meta, now=inside) is True
     # No end time at all (legacy meta): never closes.
     assert is_registration_open("TUE", "6:00 PM - Hall", now=inside) is True
+
+
+def test_event_locks_for_editing_only_once_fully_ended():
+    # Same 6-8 PM EAT event as the registration test (8 PM EAT = 17:00
+    # UTC) — but editing stays open right up until the actual end time,
+    # not registration's earlier 15-min-before-end cutoff.
+    meta = "6:00 PM to 8:00 PM · Hall"
+    during_registration_closed_window = datetime(2026, 7, 21, 16, 50, tzinfo=timezone.utc)
+    just_before_end = datetime(2026, 7, 21, 16, 59, tzinfo=timezone.utc)
+    after_end = datetime(2026, 7, 21, 17, 30, tzinfo=timezone.utc)
+    assert is_registration_open("TUE", meta, now=during_registration_closed_window) is False
+    assert is_event_editable("TUE", meta, now=during_registration_closed_window) is True
+    assert is_event_editable("TUE", meta, now=just_before_end) is True
+    assert is_event_editable("TUE", meta, now=after_end) is False
+    # A different day of the week: not today's occurrence — editable.
+    assert is_event_editable("WED", meta, now=after_end) is True
+    # No end time at all (legacy meta): never locks.
+    assert is_event_editable("TUE", "6:00 PM - Hall", now=after_end) is True
 
 
 def test_next_occurrence_rolls_to_next_week_once_todays_time_has_passed():

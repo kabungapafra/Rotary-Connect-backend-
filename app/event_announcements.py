@@ -113,6 +113,23 @@ def is_registration_open(dow: str, meta: str, now: datetime | None = None) -> bo
     return now < closes_at
 
 
+def is_event_editable(dow: str, meta: str, now: datetime | None = None) -> bool:
+    """False once today's occurrence has fully ended (its actual end time,
+    not registration's earlier 15-minute cutoff) — an event that already
+    happened shouldn't have its name/time/venue rewritten after the fact.
+    Events without a parseable end time are always editable (legacy
+    metas). Reopens the next day, same as is_registration_open."""
+    end = parse_event_end_time(meta)
+    if end is None:
+        return True
+    now = now or datetime.now(timezone.utc)
+    eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
+    if eat_today.strftime("%a").upper() != dow.upper()[:3]:
+        return True
+    ends_at = local_time_on_date_utc(*end, eat_today)
+    return now < ends_at
+
+
 def venue_from_meta(meta: str) -> str:
     """Whatever follows the clock time in "6:00 PM - Hall" -> "Hall". If
     there's no separator (or no parseable time at all), the whole field is

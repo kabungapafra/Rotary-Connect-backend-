@@ -100,3 +100,28 @@ def test_deleting_an_event_with_web_rsvps_succeeds(client, db, make_member, make
         db.query(models.EventRsvp).filter(models.EventRsvp.event_id == event_id).count()
         == 0
     )
+
+
+def test_ended_event_cannot_be_edited(client, db, make_member, make_event):
+    """An event that already ended (today's occurrence, past its end
+    time) locks against edits — its historical name/time/venue shouldn't
+    be rewritten after the fact."""
+    from datetime import date
+
+    president = make_member(role="President", suffix="078", is_board=True)
+    todays_dow = date.today().strftime("%a").upper()
+    event = make_event(dow=todays_dow, meta="12:00 AM to 12:01 AM · Hall")
+
+    res = client.patch(
+        f"/club/events/{event.id}",
+        json={"dow": todays_dow, "name": "Renamed", "meta": "6:00 PM - Hall"},
+        headers=_auth(president),
+    )
+    assert res.status_code == 422
+    assert "ended" in res.json()["detail"].lower()
+
+    res = client.get("/club/events", headers=_auth(president))
+    row = next(e for e in res.json() if e["id"] == event.id)
+    assert row["editable"] is False
+    # Unaffected by the rejected edit.
+    assert row["name"] == "Pytest Fellowship"

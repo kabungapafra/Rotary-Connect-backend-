@@ -9,6 +9,7 @@ from ..database import get_db
 from ..event_announcements import (
     CHECKIN_LEAD_MINUTES,
     checkin_window_utc,
+    is_event_editable,
     is_registration_open,
     next_occurrence_utc,
     parse_event_time,
@@ -79,6 +80,7 @@ def list_events(
             meta=e.meta,
             image=e.image,
             registration_open=is_registration_open(e.dow, e.meta),
+            editable=is_event_editable(e.dow, e.meta),
         )
         for e in events
     ]
@@ -196,6 +198,11 @@ def update_event(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
+    if not is_event_editable(event.dow, event.meta):
+        raise HTTPException(
+            status_code=422,
+            detail="This event has already ended and can no longer be edited.",
+        )
     event.dow = payload.dow.strip().upper()[:3] or event.dow
     event.name = payload.name.strip() or event.name
     event.meta = payload.meta.strip()

@@ -247,6 +247,10 @@ class EventOut(BaseModel):
     # (see event_announcements.is_registration_open) — the app hides the
     # Register/QR button. Always True for events without an end time.
     registration_open: bool = True
+    # False once today's occurrence has fully ended (see
+    # event_announcements.is_event_editable) — the app locks editing.
+    # Always True for events without an end time.
+    editable: bool = True
 
 
 class VisitorClubOut(BaseModel):
