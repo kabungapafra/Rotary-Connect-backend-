@@ -81,11 +81,26 @@ def test_secretary_shares_president_management_powers(client, make_member, make_
     assert res.status_code == 200
 
 
-def test_treasurer_cannot_generate_event_qr(client, make_member, make_event):
-    # Treasurer is a real role (needed so the app's Treasury-card gating has
-    # something to check against) but isn't one of the five roles allowed
-    # to generate event registration links.
+def test_treasurer_can_generate_event_qr(client, make_member, make_event):
+    # Treasurer often runs event logistics/payments — added to the
+    # event-registration role set alongside Board Director.
     treasurer = make_member(role="Treasurer", suffix="014")
     event = make_event()
     res = client.get(f"/club/events/{event.id}/registration", headers=_auth(treasurer))
+    assert res.status_code == 200
+
+
+def test_board_director_can_generate_event_qr(client, make_member, make_event):
+    director = make_member(role="Board Director", suffix="015")
+    event = make_event()
+    res = client.get(f"/club/events/{event.id}/registration", headers=_auth(director))
+    assert res.status_code == 200
+
+
+def test_committee_chair_cannot_generate_event_qr(client, make_member, make_event):
+    # A plain committee chair title is not one of the roles allowed to
+    # generate event registration links (unlike Treasurer/Board Director).
+    chair = make_member(role="Membership Chair", suffix="016")
+    event = make_event()
+    res = client.get(f"/club/events/{event.id}/registration", headers=_auth(chair))
     assert res.status_code == 403

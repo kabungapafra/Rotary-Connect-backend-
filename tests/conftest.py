@@ -20,6 +20,15 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def _reset_client_cookies(client):
+    """`client` is session-scoped (one TestClient/cookie jar for the whole
+    run) — without a reset, the rc_name/rc_phone cookies set by a public
+    RSVP submission in one test would leak into unrelated later tests."""
+    client.cookies.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_limits():
     """Rate limits and lockouts are keyed by identifier/IP and persisted in
     Postgres (shared across uvicorn workers) — without a reset, one test's

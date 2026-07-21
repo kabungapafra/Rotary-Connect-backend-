@@ -27,6 +27,8 @@ EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
     "President-Elect",
     "Secretary",
     "Immediate Past President",
+    "Treasurer",
+    "Board Director",
 }
 
 

@@ -29,6 +29,13 @@ router = APIRouter(tags=["event-registration"])
 _RSVP_WINDOW_SECONDS = 600
 _RSVP_MAX_PER_WINDOW = 10
 
+# Set on a browser after a successful RSVP so scanning another event's QR
+# (or this same one again) recognizes the visitor instead of demanding a
+# blank form every time — see rsvp_form/rsvp_submit below.
+_COOKIE_NAME = "rc_name"
+_COOKIE_PHONE = "rc_phone"
+_COOKIE_MAX_AGE = 60 * 60 * 24 * 180  # 180 days
+
 
 def _registration_link(event_id: int) -> str:
     return f"{config.PUBLIC_BASE_URL}/rsvp/{event_id}"
@@ -51,8 +58,8 @@ def get_event_registration(
     if member.role not in EVENT_REGISTRATION_ROLES:
         raise HTTPException(
             status_code=403,
-            detail="Only the President, Sergeant-at-Arms, President-Elect, "
-            "Secretary, or Immediate Past President can generate this",
+            detail="Only the President, President-Elect, Secretary, Treasurer, "
+            "Sergeant-at-Arms, Board Director, or Immediate Past President can generate this",
         )
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
@@ -66,20 +73,7 @@ def get_event_registration(
 _ATTENDEE_TYPES = ["Member", "Prospective member", "Visiting Rotarian", "Friend & family"]
 
 
-def _rsvp_page(event: models.Event, club: models.Club, message: str | None = None) -> str:
-    name = html.escape(event.name)
-    meta = html.escape(event.meta)
-    club_name = html.escape(club.name)
-    banner = (
-        f'<p style="color:#1a7f37;font-weight:700;margin:0 0 16px">{html.escape(message)}</p>'
-        if message
-        else ""
-    )
-    type_options = "".join(
-        f'<label class="type-opt"><input type="radio" name="attendee_type" value="{html.escape(t)}"'
-        f'{" checked" if t == "Member" else ""} onchange="toggleClub()"> {html.escape(t)}</label>'
-        for t in _ATTENDEE_TYPES
-    )
+def _page_shell(name: str, club_name: str, body: str) -> str:
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -114,7 +108,32 @@ def _rsvp_page(event: models.Event, club: models.Club, message: str | None = Non
 </head>
 <body>
   <div class="card">
-    <span class="badge">{club_name}</span>
+    {body}
+  </div>
+</body></html>"""
+
+
+def _rsvp_page(
+    event: models.Event,
+    club: models.Club,
+    message: str | None = None,
+    prefill_name: str = "",
+    prefill_phone: str = "",
+) -> str:
+    name = html.escape(event.name)
+    meta = html.escape(event.meta)
+    club_name = html.escape(club.name)
+    banner = (
+        f'<p style="color:#1a7f37;font-weight:700;margin:0 0 16px">{html.escape(message)}</p>'
+        if message
+        else ""
+    )
+    type_options = "".join(
+        f'<label class="type-opt"><input type="radio" name="attendee_type" value="{html.escape(t)}"'
+        f'{" checked" if t == "Member" else ""} onchange="toggleClub()"> {html.escape(t)}</label>'
+        for t in _ATTENDEE_TYPES
+    )
+    body = f"""<span class="badge">{club_name}</span>
     <h1>{name}</h1>
     <p class="meta">{meta}</p>
     {banner}
@@ -122,26 +141,48 @@ def _rsvp_page(event: models.Event, club: models.Club, message: str | None = Non
       <label>I AM A...</label>
       {type_options}
       <label>YOUR NAME</label>
-      <input name="name" required maxlength="120">
+      <input name="name" required maxlength="120" value="{html.escape(prefill_name)}">
       <label>PHONE NUMBER</label>
-      <input name="phone" required maxlength="20" placeholder="e.g. 0772 000 000">
+      <input name="phone" required maxlength="20" placeholder="e.g. 0772 000 000" value="{html.escape(prefill_phone)}">
       <div id="club-field">
         <label>YOUR CLUB</label>
         <input id="club-input" name="club_name" maxlength="160" placeholder="e.g. Rotary Club of Naalya">
       </div>
       <button type="submit">Register</button>
-    </form>
-  </div>
-</body></html>"""
+    </form>"""
+    return _page_shell(name, club_name, body)
+
+
+def _already_registered_page(event: models.Event, club: models.Club, visitor_name: str) -> str:
+    name = html.escape(event.name)
+    meta = html.escape(event.meta)
+    club_name = html.escape(club.name)
+    first_name = html.escape(visitor_name.split()[0] if visitor_name.split() else visitor_name)
+    body = f"""<span class="badge">{club_name}</span>
+    <h1>{name}</h1>
+    <p class="meta">{meta}</p>
+    <p style="color:#1a7f37;font-weight:700;margin:0">You're already registered, {first_name} — see you there!</p>"""
+    return _page_shell(name, club_name, body)
 
 
 @router.get("/rsvp/{event_id}", response_class=HTMLResponse)
-def rsvp_form(event_id: int, db: Session = Depends(get_db)):
+def rsvp_form(event_id: int, request: Request, db: Session = Depends(get_db)):
     event = db.get(models.Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     club = db.get(models.Club, event.club_id)
-    return _rsvp_page(event, club)
+
+    known_phone = request.cookies.get(_COOKIE_PHONE, "")
+    known_name = request.cookies.get(_COOKIE_NAME, "")
+    if known_phone:
+        existing = (
+            db.query(models.EventRsvp)
+            .filter(models.EventRsvp.event_id == event_id, models.EventRsvp.phone == known_phone)
+            .first()
+        )
+        if existing is not None:
+            return HTMLResponse(_already_registered_page(event, club, existing.name))
+    return HTMLResponse(_rsvp_page(event, club, prefill_name=known_name, prefill_phone=known_phone))
 
 
 @router.post("/rsvp/{event_id}", response_class=HTMLResponse)
@@ -172,14 +213,31 @@ def rsvp_submit(
                 "<form", '<p style="color:#B3261E;font-weight:700">Enter a valid name, phone number, and club (if visiting).</p><form'
             )
         )
-    db.add(
-        models.EventRsvp(
-            event_id=event.id,
-            name=clean_name,
-            phone=clean_phone,
-            attendee_type=clean_type,
-            club_name=clean_club,
-        )
+
+    # Idempotent: a repeat submit for the same event+phone (double-scan, or
+    # the cookie having been cleared) shouldn't create a duplicate RSVP row.
+    existing = (
+        db.query(models.EventRsvp)
+        .filter(models.EventRsvp.event_id == event.id, models.EventRsvp.phone == clean_phone)
+        .first()
     )
-    db.commit()
-    return HTMLResponse(_rsvp_page(event, club, message=f"You're registered, {clean_name.split()[0]}! See you there."))
+    if existing is None:
+        db.add(
+            models.EventRsvp(
+                event_id=event.id,
+                name=clean_name,
+                phone=clean_phone,
+                attendee_type=clean_type,
+                club_name=clean_club,
+            )
+        )
+        db.commit()
+
+    response = HTMLResponse(
+        _rsvp_page(event, club, message=f"You're registered, {clean_name.split()[0]}! See you there.")
+    )
+    # Remembered so scanning another event's QR (or this one again) skips
+    # straight to a confirmation instead of asking for these details again.
+    response.set_cookie(_COOKIE_NAME, clean_name, max_age=_COOKIE_MAX_AGE, httponly=True, samesite="lax")
+    response.set_cookie(_COOKIE_PHONE, clean_phone, max_age=_COOKIE_MAX_AGE, httponly=True, samesite="lax")
+    return response
