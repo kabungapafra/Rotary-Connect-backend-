@@ -59,6 +59,8 @@ class GuestCheckInRequest(BaseModel):
     phone: str
     host_name: str = ""
     guest_type: str = ""
+    # A Visiting Rotarian's own club (not the one being visited).
+    member_club: str = ""
 
 
 class GuestCheckInResponse(BaseModel):
@@ -299,12 +301,25 @@ class MeetingAttendee(BaseModel):
     time: str
 
 
+class MeetingGuest(BaseModel):
+    """A non-member on the register: a walk-in who scanned the club QR
+    ("scan") or someone who registered through an event's public web RSVP
+    form ("web")."""
+
+    name: str
+    type: str  # Guest / Prospective member / Visiting Rotarian / ...
+    club_name: str  # a Visiting Rotarian's own club, else ""
+    time: str
+    via: str  # "scan" | "web"
+
+
 class MeetingOut(BaseModel):
     date: str
     name: str
     checkin_count: int
     attended: bool  # whether the requesting member checked in
     attendees: list[MeetingAttendee]
+    guests: list[MeetingGuest] = []
 
 
 class MemberSummaryOut(BaseModel):

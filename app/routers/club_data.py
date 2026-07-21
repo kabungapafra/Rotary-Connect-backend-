@@ -311,6 +311,16 @@ def delete_project(
 
 # ── meetings history & member summary ───────────────────────────────────
 
+_DOW_ORDER = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+
+def _rsvp_target_date(dow: str, created: date) -> date:
+    """The meeting date an RSVP is for: the first occurrence of the event's
+    weekly dow on/after the day the RSVP was made (same day counts)."""
+    idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
+    return created + timedelta(days=(idx - created.weekday()) % 7)
+
+
 @router.get("/meetings", response_model=list[schemas.MeetingOut])
 def list_meetings(
     db: Session = Depends(get_db),
@@ -340,6 +350,57 @@ def list_meetings(
         for row in rows:
             checkins_by_meeting[row.meeting_id].append(row)
 
+    # Non-members on the same register: walk-in guests who scanned the club
+    # QR that day, and people who registered ahead of time through an
+    # event's public web RSVP form. An RSVP names an event (a weekly dow),
+    # not a date — it targets the first occurrence of that dow on/after the
+    # day it was made, so each RSVP lands on exactly one meeting date.
+    meeting_dates = {m.date for m in meetings}
+    guests_by_date: dict[date, list[schemas.MeetingGuest]] = defaultdict(list)
+    if meeting_dates:
+        visits = (
+            db.query(models.GuestVisit)
+            .filter(
+                models.GuestVisit.club_id == member.club_id,
+                models.GuestVisit.visit_date.in_(meeting_dates),
+            )
+            .order_by(models.GuestVisit.created_at)
+            .all()
+        )
+        for v in visits:
+            guests_by_date[v.visit_date].append(
+                schemas.MeetingGuest(
+                    name=v.name,
+                    type=v.guest_type or "Guest",
+                    club_name=v.member_club,
+                    time=v.created_at.strftime("%H:%M") if v.created_at else "",
+                    via="scan",
+                )
+            )
+        club_events = {
+            e.id: e
+            for e in db.query(models.Event).filter(models.Event.club_id == member.club_id)
+        }
+        if club_events:
+            rsvps = (
+                db.query(models.EventRsvp)
+                .filter(models.EventRsvp.event_id.in_(club_events.keys()))
+                .order_by(models.EventRsvp.created_at)
+                .all()
+            )
+            for r in rsvps:
+                target = _rsvp_target_date(club_events[r.event_id].dow, r.created_at.date())
+                if target in meeting_dates:
+                    guests_by_date[target].append(
+                        schemas.MeetingGuest(
+                            name=r.name,
+                            type=r.attendee_type or "Guest",
+                            club_name=r.club_name,
+                            time=r.created_at.strftime("%H:%M"),
+                            via="web",
+                        )
+                    )
+
     out = []
     for m in meetings:
         rows = checkins_by_meeting.get(m.id, [])
@@ -357,6 +418,7 @@ def list_meetings(
                     )
                     for r in rows
                 ],
+                guests=guests_by_date.get(m.date, []),
             )
         )
     return out

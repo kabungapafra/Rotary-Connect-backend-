@@ -235,6 +235,10 @@ class GuestVisit(Base):
     phone: Mapped[str] = mapped_column(String(20))
     host_name: Mapped[str] = mapped_column(String(120), default="")
     guest_type: Mapped[str] = mapped_column(String(40), default="")
+    # Only meaningful for a Visiting Rotarian — which club they're from
+    # (their own club, not the one being visited). Same idea as
+    # EventRsvp.club_name.
+    member_club: Mapped[str] = mapped_column(String(160), default="")
     visit_date: Mapped[date] = mapped_column(Date, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

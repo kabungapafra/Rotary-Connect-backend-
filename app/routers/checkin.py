@@ -178,6 +178,7 @@ def guest_check_in(
         phone=phone,
         host_name=payload.host_name.strip()[:120],
         guest_type=payload.guest_type.strip()[:40],
+        member_club=payload.member_club.strip()[:160],
         visit_date=today,
     )
     db.add(visit)
