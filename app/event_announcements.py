@@ -201,6 +201,30 @@ def _send_event_reminder(event_id: int) -> None:
         db.close()
 
 
+# Rotated so consecutive fellowships don't all get the identical text —
+# which message a given meeting gets is picked by how many meetings the
+# club has held (deterministic: a retry/restart resends the same one, not
+# a different one).
+_THANK_YOU_MESSAGES = [
+    "Dear Rotarians, thank you for joining us for our fellowship. Your "
+    "presence made the gathering special. We look forward to welcoming you "
+    "again as we continue building friendship, fellowship, and service "
+    "together.",
+    "Thank you, dear Rotarians, for being part of our fellowship. Your "
+    "time, smiles, and friendship made the day memorable. We can't wait to "
+    "fellowship with you again soon.",
+    "Dear Rotarians, we appreciate your presence at our fellowship. Every "
+    "moment shared strengthens our Rotary family. We look forward to "
+    "seeing you again at our next gathering.",
+    "A big thank you to all Rotarians who joined our fellowship. Your "
+    "participation brought energy and joy to our meeting. Let's continue "
+    "growing together through friendship and service.",
+    "Dear Rotarians, thank you for making our fellowship a success. Your "
+    "presence reminds us of the power of Rotary friendship. We warmly "
+    "invite you to join us again for more fellowship and service moments.",
+]
+
+
 def _send_event_thank_you(event_id: int) -> None:
     """Fires `_THANK_YOU_LAG_HOURS` after the event's scheduled start —
     thanks whoever actually checked in to today's meeting, not the whole
@@ -225,9 +249,14 @@ def _send_event_thank_you(event_id: int) -> None:
         ).all()
         if not checkins:
             return
+        meetings_held = (
+            db.query(models.Meeting)
+            .filter(models.Meeting.club_id == event.club_id)
+            .count()
+        )
+        message = _THANK_YOU_MESSAGES[meetings_held % len(_THANK_YOU_MESSAGES)]
         phones = [c.member.phone for c in checkins if c.member.phone]
-        text = f"🙏 Thank you for coming to {event.name} today! See you next time — {club.name}"
-        send_bulk_sms(phones, text)
+        send_bulk_sms(phones, f"🙏 {message} — {club.name}")
         tokens = [
             row.token
             for row in db.query(models.DeviceToken).filter(
@@ -237,7 +266,7 @@ def _send_event_thank_you(event_id: int) -> None:
         send_bulk_push(
             tokens,
             "🙏 Thanks for coming!",
-            f"See you next time at {event.name} — {club.name}",
+            f"{message} — {club.name}",
             data={"type": "event", "event_id": str(event.id)},
         )
     finally:

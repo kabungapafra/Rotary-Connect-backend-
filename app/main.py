@@ -224,6 +224,27 @@ def _run_error_log_cleanup_job() -> None:
         db.close()
 
 
+# Arbitrary but stable app-wide key for the scheduler election below.
+_SCHEDULER_LOCK_KEY = 727401
+# The winning worker's connection — held open for the whole process
+# lifetime, because a Postgres advisory lock lives exactly as long as the
+# connection that took it. Never returned to the pool, never closed.
+_scheduler_lock_conn = None
+
+
+def _try_acquire_scheduler_lock() -> bool:
+    global _scheduler_lock_conn
+    conn = engine.connect()
+    got = conn.execute(
+        text("SELECT pg_try_advisory_lock(:key)"), {"key": _SCHEDULER_LOCK_KEY}
+    ).scalar()
+    if got:
+        _scheduler_lock_conn = conn
+        return True
+    conn.close()
+    return False
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     if config.JWT_SECRET == "dev-secret-change-me":
@@ -310,6 +331,17 @@ def on_startup() -> None:
         migrate_legacy_photos(db)
         backfill_gallery_thumbs(db)
 
+    # Exactly ONE worker process may run the scheduler. uvicorn runs this
+    # startup hook once per worker; before this lock existed every worker
+    # started its own in-memory scheduler with all the jobs below, so every
+    # scheduled SMS/push (event reminders, post-meeting thank-yous, birthday
+    # and dues sweeps) went out once per worker — members received the same
+    # message up to --workers times. A Postgres advisory lock elects one
+    # winner; the held connection keeps the lock for the process lifetime.
+    if not _try_acquire_scheduler_lock():
+        logger.info("Another worker holds the scheduler lock — not scheduling here")
+        return
+
     # Birthday SMS: sent at 7am Africa/Kampala (UTC+3, fixed, no DST) ->
     # 04:00 UTC. Plus one run right now at startup — the free-tier dyno
     # sleeps when idle, so "right now" is what actually catches most
@@ -349,6 +381,21 @@ def on_startup() -> None:
 
     with SessionLocal() as db:
         reschedule_all_event_announcements(db)
+
+    # Only THIS worker's scheduler actually runs — but create/update-event
+    # requests land on any worker, whose (dormant) scheduler silently
+    # swallows the add_job. Re-syncing all events' jobs here every 10
+    # minutes picks those changes up; replace_existing makes it idempotent,
+    # and jobs for since-deleted events no-op on their own (the send
+    # functions re-read the event and bail if it's gone).
+    def _run_event_resync_job() -> None:
+        with SessionLocal() as sync_db:
+            reschedule_all_event_announcements(sync_db)
+
+    scheduler.add_job(
+        _run_event_resync_job, "interval",
+        minutes=10, id="event_job_resync", replace_existing=True,
+    )
 
 
 @app.get("/health")
