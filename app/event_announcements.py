@@ -65,6 +65,54 @@ def parse_event_time(meta: str) -> tuple[int, int] | None:
     return hour, minute
 
 
+def parse_event_end_time(meta: str) -> tuple[int, int] | None:
+    """The event's END time, when the TIME field holds a range written as
+    "6:00 PM to 8:00 PM" ("to" on purpose — the dash is already the
+    time/venue separator in legacy metas like "6:00 PM - Hall"). None when
+    there's no second clock time, which is every event created before end
+    times existed."""
+    if not meta:
+        return None
+    head = re.split(r"[-–—·,]", meta, maxsplit=1)[0]
+    matches = [m for m in _TIME_RE.finditer(head) if m.group(1)]
+    if len(matches) < 2:
+        return None
+    match = matches[1]
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    ampm = (match.group(3) or "").lower()
+    if ampm == "pm" and hour != 12:
+        hour += 12
+    elif ampm == "am" and hour == 12:
+        hour = 0
+    return hour, minute
+
+
+# Registration for an event's occurrence closes this long before its end.
+REGISTRATION_CLOSE_LEAD_MINUTES = 15
+
+
+def is_registration_open(dow: str, meta: str, now: datetime | None = None) -> bool:
+    """False from REGISTRATION_CLOSE_LEAD_MINUTES before the event's end
+    time until the end of that occurrence's (EAT) day — the event is over,
+    so its QR/registration link is closed. Events without a parseable end
+    time never close (legacy metas). Reopens the next day, when a new
+    registration would target the following week's occurrence anyway."""
+    end = parse_event_end_time(meta)
+    if end is None:
+        return True
+    now = now or datetime.now(timezone.utc)
+    eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
+    if eat_today.strftime("%a").upper() != dow.upper()[:3]:
+        return True
+    closes_at = local_time_on_date_utc(*end, eat_today) - timedelta(
+        minutes=REGISTRATION_CLOSE_LEAD_MINUTES
+    )
+    return now < closes_at
+
+
 def venue_from_meta(meta: str) -> str:
     """Whatever follows the clock time in "6:00 PM - Hall" -> "Hall". If
     there's no separator (or no parseable time at all), the whole field is

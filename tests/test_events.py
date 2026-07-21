@@ -69,3 +69,34 @@ def test_removing_event_photo_clears_it(client, db, make_member):
 
     db.query(models.Event).filter(models.Event.id == created["id"]).delete()
     db.commit()
+
+
+def test_deleting_an_event_with_web_rsvps_succeeds(client, db, make_member, make_event):
+    """EventRsvp rows hold a non-nullable FK into events — deleting an
+    event that anyone had registered for via the web form used to trip the
+    constraint and fail, leaving the event undeletable."""
+    president = make_member(role="President", suffix="062", is_board=True)
+    event = make_event(dow="SAT", name="Charity Gala", meta="6:00 PM - Hall")
+    # Captured now — after the delete, reading .id off the expired, gone
+    # instance raises ObjectDeletedError instead of returning the value.
+    event_id = event.id
+    db.add(
+        models.EventRsvp(
+            event_id=event_id,
+            name="Web Registrant",
+            phone="256700555666",
+            attendee_type="Friend & family",
+        )
+    )
+    db.commit()
+
+    res = client.delete(f"/club/events/{event_id}", headers=_auth(president))
+    assert res.status_code == 200
+    # The delete happened in the API's own session — drop this session's
+    # cached instances before re-reading.
+    db.expire_all()
+    assert db.get(models.Event, event_id) is None
+    assert (
+        db.query(models.EventRsvp).filter(models.EventRsvp.event_id == event_id).count()
+        == 0
+    )

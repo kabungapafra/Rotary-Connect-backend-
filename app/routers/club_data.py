@@ -9,6 +9,7 @@ from ..database import get_db
 from ..event_announcements import (
     CHECKIN_LEAD_MINUTES,
     checkin_window_utc,
+    is_registration_open,
     next_occurrence_utc,
     parse_event_time,
     rsvp_target_date,
@@ -64,12 +65,23 @@ def list_events(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    return (
+    events = (
         db.query(models.Event)
         .filter(models.Event.club_id == member.club_id)
         .order_by(models.Event.id)
         .all()
     )
+    return [
+        schemas.EventOut(
+            id=e.id,
+            dow=e.dow,
+            name=e.name,
+            meta=e.meta,
+            image=e.image,
+            registration_open=is_registration_open(e.dow, e.meta),
+        )
+        for e in events
+    ]
 
 
 @router.get("/events/next", response_model=schemas.NextMeetingOut)
@@ -208,6 +220,12 @@ def delete_event(
     unschedule_event_announcement(event.id)
     if event.storage_key:
         delete_gallery_image(event.storage_key)
+    # Web RSVPs hold a non-nullable FK into events — clear them first or
+    # the delete below trips the constraint (same manual FK enumeration as
+    # the admin delete endpoints).
+    db.query(models.EventRsvp).filter(models.EventRsvp.event_id == event.id).delete(
+        synchronize_session=False
+    )
     db.delete(event)
     db.commit()
     return {"deleted": True}

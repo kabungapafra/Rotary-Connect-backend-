@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
 from ..database import get_db
+from ..event_announcements import is_registration_open
 from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..sms import normalize_ugandan_phone
@@ -64,6 +65,11 @@ def get_event_registration(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
+    if not is_registration_open(event.dow, event.meta):
+        raise HTTPException(
+            status_code=422,
+            detail="Registration has closed — today's event is ending.",
+        )
     link = _registration_link(event.id)
     return schemas.EventRegistrationOut(link=link, qr_image=_qr_data_url(link))
 
@@ -165,12 +171,26 @@ def _already_registered_page(event: models.Event, club: models.Club, visitor_nam
     return _page_shell(name, club_name, body)
 
 
+def _registration_closed_page(event: models.Event, club: models.Club) -> str:
+    name = html.escape(event.name)
+    meta = html.escape(event.meta)
+    club_name = html.escape(club.name)
+    body = f"""<span class="badge">{club_name}</span>
+    <h1>{name}</h1>
+    <p class="meta">{meta}</p>
+    <p style="color:#B3261E;font-weight:700;margin:0">Registration has closed —
+    today's event is ending. See you at the next one!</p>"""
+    return _page_shell(name, club_name, body)
+
+
 @router.get("/rsvp/{event_id}", response_class=HTMLResponse)
 def rsvp_form(event_id: int, request: Request, db: Session = Depends(get_db)):
     event = db.get(models.Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     club = db.get(models.Club, event.club_id)
+    if not is_registration_open(event.dow, event.meta):
+        return HTMLResponse(_registration_closed_page(event, club))
 
     known_phone = request.cookies.get(_COOKIE_PHONE, "")
     known_name = request.cookies.get(_COOKIE_NAME, "")
@@ -203,6 +223,8 @@ def rsvp_submit(
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     club = db.get(models.Club, event.club_id)
+    if not is_registration_open(event.dow, event.meta):
+        return HTMLResponse(_registration_closed_page(event, club))
     clean_name = name.strip()[:120]
     clean_phone = normalize_ugandan_phone(phone)
     clean_type = attendee_type.strip() if attendee_type.strip() in _ATTENDEE_TYPES else "Member"

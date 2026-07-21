@@ -243,6 +243,10 @@ class EventOut(BaseModel):
     name: str
     meta: str
     image: str | None = None  # public R2 URL
+    # False once today's occurrence is within 15 minutes of its end time
+    # (see event_announcements.is_registration_open) — the app hides the
+    # Register/QR button. Always True for events without an end time.
+    registration_open: bool = True
 
 
 class VisitorClubOut(BaseModel):

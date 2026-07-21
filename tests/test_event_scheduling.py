@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 
 from app.event_announcements import (
     _shifted_cron,
+    is_registration_open,
     next_occurrence_utc,
+    parse_event_end_time,
     parse_event_time,
     venue_from_meta,
 )
@@ -30,6 +32,34 @@ def test_parse_event_time_returns_none_when_unparseable():
 def test_venue_from_meta_strips_the_time_prefix():
     assert venue_from_meta("6:00 PM · Gardens Hall") == "Gardens Hall"
     assert venue_from_meta("Gardens Hall") == "Gardens Hall"  # no time prefix at all
+
+
+def test_parse_event_end_time_reads_the_second_time_of_a_range():
+    assert parse_event_end_time("6:00 PM to 8:00 PM · Gardens Hall") == (20, 0)
+    assert parse_event_end_time("18:00 to 20:30, Hall") == (20, 30)
+    # Legacy metas — a dash separates time from VENUE, never an end time.
+    assert parse_event_end_time("6:00 PM - Gardens Hall") is None
+    assert parse_event_end_time("6:00 PM · Hall") is None
+    assert parse_event_end_time("") is None
+    # Both times stay parseable together: start still comes from the front.
+    assert parse_event_time("6:00 PM to 8:00 PM · Hall") == (18, 0)
+    assert venue_from_meta("6:00 PM to 8:00 PM · Hall") == "Hall"
+
+
+def test_registration_closes_15_minutes_before_the_end_time():
+    # 2026-07-21 is a Tuesday. Event 6-8 PM EAT (= 15:00-17:00 UTC);
+    # registration closes 16:45 UTC (7:45 PM EAT).
+    meta = "6:00 PM to 8:00 PM · Hall"
+    before = datetime(2026, 7, 21, 16, 30, tzinfo=timezone.utc)
+    inside = datetime(2026, 7, 21, 16, 50, tzinfo=timezone.utc)
+    after_end = datetime(2026, 7, 21, 18, 30, tzinfo=timezone.utc)
+    assert is_registration_open("TUE", meta, now=before) is True
+    assert is_registration_open("TUE", meta, now=inside) is False
+    assert is_registration_open("TUE", meta, now=after_end) is False
+    # A different day of the week: this occurrence isn't today — open.
+    assert is_registration_open("WED", meta, now=inside) is True
+    # No end time at all (legacy meta): never closes.
+    assert is_registration_open("TUE", "6:00 PM - Hall", now=inside) is True
 
 
 def test_next_occurrence_rolls_to_next_week_once_todays_time_has_passed():

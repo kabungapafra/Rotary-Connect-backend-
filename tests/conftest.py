@@ -155,19 +155,23 @@ def make_member(db, test_club):
 
 @pytest.fixture()
 def make_event(db, test_club):
-    created = []
+    # Ids captured at creation, not re-read at teardown — a test may have
+    # deleted the event itself (e.g. via DELETE /club/events), and reading
+    # .id off that now-expired, gone row raises ObjectDeletedError (same
+    # pattern as make_member above).
+    created_ids = []
 
     def _make(dow="WED", name="Pytest Fellowship", meta="6:00 PM - Hall"):
         event = models.Event(club_id=test_club.id, dow=dow, name=name, meta=meta)
         db.add(event)
         db.commit()
         db.refresh(event)
-        created.append(event)
+        created_ids.append(event.id)
         return event
 
     yield _make
-    for event in created:
-        row = db.get(models.Event, event.id)
+    for event_id in created_ids:
+        row = db.get(models.Event, event_id)
         if row:
             db.delete(row)
     db.commit()
