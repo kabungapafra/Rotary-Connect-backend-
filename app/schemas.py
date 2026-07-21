@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -29,6 +29,7 @@ class MemberOut(BaseModel):
     email: str
     phone: str
     dob: str
+    terminated_at: date | None = None
 
 
 class LoginResponse(BaseModel):
@@ -246,6 +247,20 @@ class EventCreate(BaseModel):
     image: str | None = None
 
 
+# Rotary International's 7 official areas of focus — used to categorize a
+# club's service projects for District reporting. A project can also leave
+# this unset ("Uncategorized" in reports) rather than forcing a guess.
+ROTARY_AREAS_OF_FOCUS = [
+    "Peacebuilding and Conflict Prevention",
+    "Disease Prevention and Treatment",
+    "Water, Sanitation, and Hygiene",
+    "Maternal and Child Health",
+    "Basic Education and Literacy",
+    "Community Economic Development",
+    "Environment",
+]
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -256,6 +271,9 @@ class ProjectOut(BaseModel):
     desc: str
     deadline: str
     image: str | None = None  # public R2 URL
+    area_of_focus: str | None = None
+    hours_volunteered: int = 0
+    beneficiaries_reached: int = 0
 
 
 class ProjectCreate(BaseModel):
@@ -267,6 +285,9 @@ class ProjectCreate(BaseModel):
     # "data:image/...;base64,..." to set/replace the photo; "__remove__"
     # clears it; omitted/None leaves it as-is on update (or unset on create).
     image: str | None = None
+    area_of_focus: str | None = None
+    hours_volunteered: int = 0
+    beneficiaries_reached: int = 0
 
 
 class MeetingAttendee(BaseModel):
@@ -308,7 +329,7 @@ class ClubMemberCreate(BaseModel):
 class ClubMemberUpdate(BaseModel):
     role: str | None = None
     is_board: bool | None = None
-    status: str | None = None  # active | suspended
+    status: str | None = None  # active | suspended | terminated
 
 
 class ClubMemberCreateResponse(BaseModel):

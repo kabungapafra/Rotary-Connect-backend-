@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -111,10 +113,19 @@ def update_member(
     if payload.is_board is not None:
         target.is_board = payload.is_board
     if payload.status is not None:
-        if payload.status not in ("active", "suspended"):
+        if payload.status not in ("active", "suspended", "terminated"):
             raise HTTPException(
-                status_code=422, detail="status must be 'active' or 'suspended'"
+                status_code=422,
+                detail="status must be 'active', 'suspended' or 'terminated'",
             )
+        # Dated only on the transition into "terminated", cleared on
+        # reactivation — the club report's membership section counts
+        # terminations by this date, not by whatever status happens to be
+        # set right now.
+        if payload.status == "terminated" and target.status != "terminated":
+            target.terminated_at = date.today()
+        elif payload.status == "active":
+            target.terminated_at = None
         target.status = payload.status
     db.commit()
     db.refresh(target)

@@ -1,5 +1,6 @@
 import tempfile
 
+from collections import defaultdict
 from datetime import date
 
 from fastapi import (
@@ -309,6 +310,79 @@ def _role_holder(db: Session, club_id: int, roles: set[str]) -> str:
     return f"Rtn. {m.name}" if m else "Not assigned"
 
 
+def _active_member_count(db: Session, club_id: int) -> int:
+    """Active roster only — suspended/terminated members can't check in
+    (login is blocked for them), so this also doubles as the correct
+    attendance-rate denominator."""
+    return (
+        db.query(models.Member)
+        .filter(models.Member.club_id == club_id, models.Member.status == "active")
+        .count()
+    )
+
+
+def _membership_rows(
+    db: Session, club_id: int, period_start: date
+) -> tuple[int, list[schemas.ReportRow]]:
+    """(active_count, Membership section rows) — new members by join date,
+    terminations by the date they were marked terminated, both counted
+    from `period_start` to now."""
+    active_count = _active_member_count(db, club_id)
+    board_count = (
+        db.query(models.Member)
+        .filter(models.Member.club_id == club_id, models.Member.is_board.is_(True))
+        .count()
+    )
+    new_members = (
+        db.query(models.Member)
+        .filter(models.Member.club_id == club_id, models.Member.created_at >= period_start)
+        .count()
+    )
+    terminations = (
+        db.query(models.Member)
+        .filter(
+            models.Member.club_id == club_id,
+            models.Member.status == "terminated",
+            models.Member.terminated_at >= period_start,
+        )
+        .count()
+    )
+    rows = [
+        schemas.ReportRow(label="Current membership", value=str(active_count)),
+        schemas.ReportRow(label="Board & officers", value=str(board_count)),
+        schemas.ReportRow(label="New members", value=str(new_members)),
+        schemas.ReportRow(label="Terminations/resignations", value=str(terminations)),
+        schemas.ReportRow(label="Net change", value=f"{new_members - terminations:+d}"),
+    ]
+    return active_count, rows
+
+
+def _project_rows(projects: list[models.Project]) -> list[schemas.ReportRow]:
+    """Total/completed/hours/beneficiaries, plus a per-area breakdown —
+    only areas with at least one project get a row, so an unused area
+    doesn't pad the report with zeroes."""
+    completed = sum(1 for p in projects if p.pct >= 100)
+    area_counts: dict[str, int] = defaultdict(int)
+    for p in projects:
+        area_counts[p.area_of_focus or "Uncategorized"] += 1
+    rows = [
+        schemas.ReportRow(label="Total projects", value=str(len(projects))),
+        schemas.ReportRow(label="Completed", value=str(completed)),
+        schemas.ReportRow(
+            label="Total volunteer hours",
+            value=str(sum(p.hours_volunteered for p in projects)),
+        ),
+        schemas.ReportRow(
+            label="Total beneficiaries reached",
+            value=str(sum(p.beneficiaries_reached for p in projects)),
+        ),
+    ]
+    for area in [*schemas.ROTARY_AREAS_OF_FOCUS, "Uncategorized"]:
+        if area_counts.get(area):
+            rows.append(schemas.ReportRow(label=area, value=str(area_counts[area])))
+    return rows
+
+
 @router.get("/monthly-report", response_model=schemas.ReportOut)
 def monthly_report(
     db: Session = Depends(get_db),
@@ -318,14 +392,7 @@ def monthly_report(
     today = date.today()
     month_start = today.replace(day=1)
 
-    member_count = (
-        db.query(models.Member).filter(models.Member.club_id == member.club_id).count()
-    )
-    board_count = (
-        db.query(models.Member)
-        .filter(models.Member.club_id == member.club_id, models.Member.is_board.is_(True))
-        .count()
-    )
+    active_count, membership_rows = _membership_rows(db, member.club_id, month_start)
     meetings_this_month = (
         db.query(models.Meeting)
         .filter(models.Meeting.club_id == member.club_id, models.Meeting.date >= month_start)
@@ -338,14 +405,13 @@ def monthly_report(
         else 0
     )
     avg_attendance = (
-        round(checkins_this_month / (len(meetings_this_month) * member_count) * 100)
-        if meetings_this_month and member_count
+        round(checkins_this_month / (len(meetings_this_month) * active_count) * 100)
+        if meetings_this_month and active_count
         else 0
     )
     projects = (
         db.query(models.Project).filter(models.Project.club_id == member.club_id).all()
     )
-    completed_projects = sum(1 for p in projects if p.pct >= 100)
 
     treasury = treasury_summary(db=db, member=member)
 
@@ -369,13 +435,7 @@ def monthly_report(
                     ),
                 ],
             ),
-            schemas.ReportSection(
-                section="Membership",
-                rows=[
-                    schemas.ReportRow(label="Current membership", value=str(member_count)),
-                    schemas.ReportRow(label="Board & officers", value=str(board_count)),
-                ],
-            ),
+            schemas.ReportSection(section="Membership", rows=membership_rows),
             schemas.ReportSection(
                 section="Attendance",
                 rows=[
@@ -388,13 +448,7 @@ def monthly_report(
                     ),
                 ],
             ),
-            schemas.ReportSection(
-                section="Projects",
-                rows=[
-                    schemas.ReportRow(label="Total projects", value=str(len(projects))),
-                    schemas.ReportRow(label="Completed", value=str(completed_projects)),
-                ],
-            ),
+            schemas.ReportSection(section="Projects", rows=_project_rows(projects)),
             schemas.ReportSection(
                 section="Treasury",
                 rows=[
@@ -426,9 +480,7 @@ def annual_report(
     today = date.today()
     year_start = today.replace(month=1, day=1)
 
-    member_count = (
-        db.query(models.Member).filter(models.Member.club_id == member.club_id).count()
-    )
+    active_count, membership_rows = _membership_rows(db, member.club_id, year_start)
     meetings_this_year = (
         db.query(models.Meeting)
         .filter(models.Meeting.club_id == member.club_id, models.Meeting.date >= year_start)
@@ -441,14 +493,13 @@ def annual_report(
         else 0
     )
     avg_attendance = (
-        round(checkins_this_year / (len(meetings_this_year) * member_count) * 100)
-        if meetings_this_year and member_count
+        round(checkins_this_year / (len(meetings_this_year) * active_count) * 100)
+        if meetings_this_year and active_count
         else 0
     )
     projects = (
         db.query(models.Project).filter(models.Project.club_id == member.club_id).all()
     )
-    completed_projects = sum(1 for p in projects if p.pct >= 100)
     year_tx = (
         db.query(models.Transaction)
         .filter(models.Transaction.club_id == member.club_id)
@@ -462,10 +513,7 @@ def annual_report(
         title=f"Rotary Club Annual Report {today.year}",
         subtitle=f"{club.name if club else 'Club'} · Prepared by the Club Secretary",
         sections=[
-            schemas.ReportSection(
-                section="Membership",
-                rows=[schemas.ReportRow(label="Current members", value=str(member_count))],
-            ),
+            schemas.ReportSection(section="Membership", rows=membership_rows),
             schemas.ReportSection(
                 section="Club leadership",
                 rows=[
@@ -481,13 +529,7 @@ def annual_report(
                     ),
                 ],
             ),
-            schemas.ReportSection(
-                section="Projects",
-                rows=[
-                    schemas.ReportRow(label="Total projects", value=str(len(projects))),
-                    schemas.ReportRow(label="Completed", value=str(completed_projects)),
-                ],
-            ),
+            schemas.ReportSection(section="Projects", rows=_project_rows(projects)),
             schemas.ReportSection(
                 section="Meetings & attendance",
                 rows=[

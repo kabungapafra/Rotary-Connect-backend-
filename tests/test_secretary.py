@@ -6,7 +6,7 @@ import base64
 
 import pytest
 
-from app import security, storage
+from app import models, security, storage
 
 
 def _auth(member):
@@ -90,6 +90,60 @@ def test_monthly_report_reflects_real_membership_count(client, make_member):
     current = next(r for r in membership_section["rows"] if r["label"] == "Current membership")
     # 2 members created above, in a club that started with none.
     assert current["value"] == "2"
+
+
+def test_monthly_report_membership_net_change_and_active_only_count(client, make_member):
+    president = make_member(role="President", suffix="063", is_board=True)
+    suspended = make_member(role="Member", suffix="064")
+    to_terminate = make_member(role="Member", suffix="065")
+    make_member(role="Member", suffix="066")
+
+    client.patch(
+        f"/club/members/{suspended.id}", json={"status": "suspended"}, headers=_auth(president)
+    )
+    client.patch(
+        f"/club/members/{to_terminate.id}",
+        json={"status": "terminated"},
+        headers=_auth(president),
+    )
+
+    res = client.get("/club/secretary/monthly-report", headers=_auth(president))
+    assert res.status_code == 200
+    membership = next(
+        s for s in res.json()["sections"] if s["section"] == "Membership"
+    )
+    rows = {r["label"]: r["value"] for r in membership["rows"]}
+    # 4 members created above, minus the 1 suspended and 1 terminated.
+    assert rows["Current membership"] == "2"
+    # All 4 were created "now" (this month), regardless of later status.
+    assert rows["New members"] == "4"
+    assert rows["Terminations/resignations"] == "1"
+    assert rows["Net change"] == "+3"
+
+
+def test_monthly_report_projects_include_hours_beneficiaries_and_area(client, db, make_member):
+    president = make_member(role="President", suffix="067", is_board=True)
+    client.post(
+        "/club/projects",
+        json={
+            "name": "Borehole Drive",
+            "area_of_focus": "Water, Sanitation, and Hygiene",
+            "hours_volunteered": 40,
+            "beneficiaries_reached": 500,
+        },
+        headers=_auth(president),
+    )
+
+    res = client.get("/club/secretary/monthly-report", headers=_auth(president))
+    assert res.status_code == 200
+    projects = next(s for s in res.json()["sections"] if s["section"] == "Projects")
+    rows = {r["label"]: r["value"] for r in projects["rows"]}
+    assert rows["Total volunteer hours"] == "40"
+    assert rows["Total beneficiaries reached"] == "500"
+    assert rows["Water, Sanitation, and Hygiene"] == "1"
+
+    db.query(models.Project).filter(models.Project.club_id == president.club_id).delete()
+    db.commit()
 
 
 _TINY_PDF = "data:application/pdf;base64," + base64.b64encode(

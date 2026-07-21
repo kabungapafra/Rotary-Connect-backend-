@@ -23,6 +23,39 @@ def _auth(member):
     return {"Authorization": f"Bearer {token}"}
 
 
+def test_project_report_fields_round_trip(client, db, make_member):
+    president = make_member(role="President", suffix="072", is_board=True)
+
+    res = client.post(
+        "/club/projects",
+        json={
+            "name": "Borehole Drive",
+            "area_of_focus": "Water, Sanitation, and Hygiene",
+            "hours_volunteered": 40,
+            "beneficiaries_reached": 500,
+        },
+        headers=_auth(president),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["area_of_focus"] == "Water, Sanitation, and Hygiene"
+    assert body["hours_volunteered"] == 40
+    assert body["beneficiaries_reached"] == 500
+
+    db.query(models.Project).filter(models.Project.id == body["id"]).delete()
+    db.commit()
+
+
+def test_unrecognized_area_of_focus_is_rejected(client, make_member):
+    president = make_member(role="President", suffix="073", is_board=True)
+    res = client.post(
+        "/club/projects",
+        json={"name": "Mystery Project", "area_of_focus": "Made Up Cause"},
+        headers=_auth(president),
+    )
+    assert res.status_code == 422
+
+
 @_requires_r2
 def test_project_photo_persists_after_reload(client, db, make_member):
     president = make_member(role="President", suffix="070", is_board=True)

@@ -214,6 +214,18 @@ def delete_event(
 
 # ── projects ────────────────────────────────────────────────────────────
 
+def _normalize_area_of_focus(value: str | None) -> str | None:
+    """None/blank stays "Uncategorized" in reports rather than guessing;
+    anything not in Rotary's 7 official areas is rejected outright so the
+    report's per-area breakdown never silently drops a project into the
+    wrong bucket."""
+    if value is None or not value.strip():
+        return None
+    if value not in schemas.ROTARY_AREAS_OF_FOCUS:
+        raise HTTPException(status_code=422, detail="Not a recognized area of focus")
+    return value
+
+
 @router.get("/projects", response_model=list[schemas.ProjectOut])
 def list_projects(
     db: Session = Depends(get_db),
@@ -243,6 +255,9 @@ def create_project(
         pct=max(0, min(100, payload.pct)),
         desc=payload.desc.strip(),
         deadline=payload.deadline.strip(),
+        area_of_focus=_normalize_area_of_focus(payload.area_of_focus),
+        hours_volunteered=max(0, payload.hours_volunteered),
+        beneficiaries_reached=max(0, payload.beneficiaries_reached),
     )
     db.add(project)
     db.commit()
@@ -268,6 +283,9 @@ def update_project(
     project.pct = max(0, min(100, payload.pct))
     project.desc = payload.desc.strip()
     project.deadline = payload.deadline.strip()
+    project.area_of_focus = _normalize_area_of_focus(payload.area_of_focus)
+    project.hours_volunteered = max(0, payload.hours_volunteered)
+    project.beneficiaries_reached = max(0, payload.beneficiaries_reached)
     _apply_r2_image(project, payload.image, prefix="projects")
     db.commit()
     db.refresh(project)

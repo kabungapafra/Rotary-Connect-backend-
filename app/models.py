@@ -103,10 +103,14 @@ class Member(Base):
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(80), default="Member")
     is_board: Mapped[bool] = mapped_column(Boolean, default=False)
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended | terminated
     email: Mapped[str] = mapped_column(String(120), default="")
     phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
     dob: Mapped[str] = mapped_column(String(20), default="")
+    # Set when status transitions to "terminated" (a resignation/removal),
+    # cleared if reactivated back to "active" — the dated trail the club
+    # report's membership section needs to count terminations in a period.
+    terminated_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     pin_hash: Mapped[str] = mapped_column(String(255))
     # Date the member last received a birthday SMS — makes the birthday
     # check idempotent so it's safe to run from multiple trigger points
@@ -172,6 +176,13 @@ class Project(Base):
     pct: Mapped[int] = mapped_column(Integer, default=0)
     desc: Mapped[str] = mapped_column(String(500), default="")
     deadline: Mapped[str] = mapped_column(String(40), default="")
+    # Report-only fields, separate from the free-text `area` above (which
+    # mixes focus area + location for display) — one of Rotary's 7 official
+    # areas of focus, validated in schemas.py, or None ("Uncategorized" in
+    # reports) for projects that predate this field.
+    area_of_focus: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    hours_volunteered: Mapped[int] = mapped_column(Integer, default=0)
+    beneficiaries_reached: Mapped[int] = mapped_column(Integer, default=0)
     # Public R2 URL for the project's photo, same storage approach as
     # gallery/event photos. Null until an image is uploaded.
     image: Mapped[str | None] = mapped_column(Text, nullable=True)

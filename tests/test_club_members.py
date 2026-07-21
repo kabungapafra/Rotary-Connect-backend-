@@ -71,6 +71,42 @@ def test_president_can_suspend_a_member(client, make_member):
     assert res.json()["status"] == "suspended"
 
 
+def test_president_can_terminate_and_reactivate_a_member(client, make_member):
+    president = make_member(role=PRESIDENT_ROLE, suffix="110")
+    target = make_member(role="Member", suffix="111")
+
+    res = client.patch(
+        f"/club/members/{target.id}", json={"status": "terminated"}, headers=_auth(president)
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "terminated"
+    assert body["terminated_at"] is not None
+
+    # Terminated members stay on the roster — reports/lookups can still
+    # find them, they're just excluded from active-member counts.
+    res = client.get("/club/members", headers=_auth(president))
+    assert any(m["id"] == target.id for m in res.json())
+
+    # Reactivating clears the termination date back out.
+    res = client.patch(
+        f"/club/members/{target.id}", json={"status": "active"}, headers=_auth(president)
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "active"
+    assert body["terminated_at"] is None
+
+
+def test_invalid_member_status_is_rejected(client, make_member):
+    president = make_member(role=PRESIDENT_ROLE, suffix="112")
+    target = make_member(role="Member", suffix="113")
+    res = client.patch(
+        f"/club/members/{target.id}", json={"status": "vacationing"}, headers=_auth(president)
+    )
+    assert res.status_code == 422
+
+
 def test_cannot_manage_a_member_in_a_different_club(client, make_member, db, test_club):
     president = make_member(role=PRESIDENT_ROLE, suffix="108")
     other_club = models.Club(name="Another Club", status="active")
