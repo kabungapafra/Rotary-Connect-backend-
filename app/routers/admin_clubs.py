@@ -219,6 +219,13 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.Event).filter(models.Event.club_id == club_id).delete(
         synchronize_session=False
     )
+    project_ids = [
+        p.id for p in db.query(models.Project.id).filter(models.Project.club_id == club_id)
+    ]
+    if project_ids:
+        db.query(models.ProjectUpdate).filter(
+            models.ProjectUpdate.project_id.in_(project_ids)
+        ).delete(synchronize_session=False)
     db.query(models.Project).filter(models.Project.club_id == club_id).delete(
         synchronize_session=False
     )

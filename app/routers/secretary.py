@@ -380,10 +380,6 @@ def _project_rows(projects: list[models.Project]) -> list[schemas.ReportRow]:
         schemas.ReportRow(label="Total projects", value=str(len(projects))),
         schemas.ReportRow(label="Completed", value=str(completed)),
         schemas.ReportRow(
-            label="Total volunteer hours",
-            value=str(sum(p.hours_volunteered for p in projects)),
-        ),
-        schemas.ReportRow(
             label="Total beneficiaries reached",
             value=str(sum(p.beneficiaries_reached for p in projects)),
         ),

@@ -179,6 +179,9 @@ def delete_member(member_id: int, db: Session = Depends(get_db)):
     db.query(models.Milestone).filter(models.Milestone.created_by == member_id).delete(
         synchronize_session=False
     )
+    db.query(models.ProjectUpdate).filter(models.ProjectUpdate.created_by == member_id).delete(
+        synchronize_session=False
+    )
     db.delete(member)
     db.commit()
     return {"deleted": True}

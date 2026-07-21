@@ -155,14 +155,13 @@ def test_monthly_report_membership_net_change_and_active_only_count(client, make
     assert rows["Net change"] == "+3"
 
 
-def test_monthly_report_projects_include_hours_beneficiaries_and_area(client, db, make_member):
+def test_monthly_report_projects_include_beneficiaries_and_area(client, db, make_member):
     president = make_member(role="President", suffix="067", is_board=True)
     client.post(
         "/club/projects",
         json={
             "name": "Borehole Drive",
             "area_of_focus": "Water, Sanitation, and Hygiene",
-            "hours_volunteered": 40,
             "beneficiaries_reached": 500,
         },
         headers=_auth(president),
@@ -172,7 +171,6 @@ def test_monthly_report_projects_include_hours_beneficiaries_and_area(client, db
     assert res.status_code == 200
     projects = next(s for s in res.json()["sections"] if s["section"] == "Projects")
     rows = {r["label"]: r["value"] for r in projects["rows"]}
-    assert rows["Total volunteer hours"] == "40"
     assert rows["Total beneficiaries reached"] == "500"
     assert rows["Water, Sanitation, and Hygiene"] == "1"
 

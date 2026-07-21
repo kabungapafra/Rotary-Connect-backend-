@@ -285,6 +285,14 @@ ROTARY_AREAS_OF_FOCUS = [
 ]
 
 
+class ProjectUpdateOut(BaseModel):
+    id: int
+    pct: int
+    note: str
+    author_name: str
+    created_at: datetime
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -296,8 +304,8 @@ class ProjectOut(BaseModel):
     deadline: str
     image: str | None = None  # public R2 URL
     area_of_focus: str | None = None
-    hours_volunteered: int = 0
     beneficiaries_reached: int = 0
+    updates: list[ProjectUpdateOut] = []
 
 
 class ProjectCreate(BaseModel):
@@ -310,8 +318,12 @@ class ProjectCreate(BaseModel):
     # clears it; omitted/None leaves it as-is on update (or unset on create).
     image: str | None = None
     area_of_focus: str | None = None
-    hours_volunteered: int = 0
     beneficiaries_reached: int = 0
+
+
+class ProjectUpdateCreate(BaseModel):
+    pct: int
+    note: str = ""
 
 
 class MeetingAttendee(BaseModel):

@@ -191,7 +191,6 @@ class Project(Base):
     # areas of focus, validated in schemas.py, or None ("Uncategorized" in
     # reports) for projects that predate this field.
     area_of_focus: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    hours_volunteered: Mapped[int] = mapped_column(Integer, default=0)
     beneficiaries_reached: Mapped[int] = mapped_column(Integer, default=0)
     # Public R2 URL for the project's photo, same storage approach as
     # gallery/event photos. Null until an image is uploaded.
@@ -200,6 +199,26 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class ProjectUpdate(Base):
+    """A progress log entry on a project — what was done since the last
+    update, and the project's completion % as of now. Separate from the
+    project's own core details (name, area, deadline, ...), which are
+    edited far less often than progress is reported."""
+
+    __tablename__ = "project_updates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    pct: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    author: Mapped["Member"] = relationship()
 
 
 class CheckIn(Base):

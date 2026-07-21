@@ -250,12 +250,41 @@ def list_projects(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    return (
+    projects = (
         db.query(models.Project)
         .filter(models.Project.club_id == member.club_id)
         .order_by(models.Project.id)
         .all()
     )
+    return [_project_out(p, _updates_for(db, p.id)) for p in projects]
+
+
+def _updates_for(db: Session, project_id: int) -> list[schemas.ProjectUpdateOut]:
+    rows = (
+        db.query(models.ProjectUpdate)
+        .filter(models.ProjectUpdate.project_id == project_id)
+        .options(joinedload(models.ProjectUpdate.author))
+        .order_by(models.ProjectUpdate.created_at.desc())
+        .all()
+    )
+    return [
+        schemas.ProjectUpdateOut(
+            id=r.id,
+            pct=r.pct,
+            note=r.note,
+            author_name=r.author.name,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+def _project_out(
+    project: models.Project, updates: list[schemas.ProjectUpdateOut]
+) -> schemas.ProjectOut:
+    out = schemas.ProjectOut.model_validate(project)
+    out.updates = updates
+    return out
 
 
 @router.post("/projects", response_model=schemas.ProjectOut)
@@ -275,7 +304,6 @@ def create_project(
         desc=payload.desc.strip(),
         deadline=payload.deadline.strip(),
         area_of_focus=_normalize_area_of_focus(payload.area_of_focus),
-        hours_volunteered=max(0, payload.hours_volunteered),
         beneficiaries_reached=max(0, payload.beneficiaries_reached),
     )
     db.add(project)
@@ -283,7 +311,7 @@ def create_project(
     db.refresh(project)
     _apply_r2_image(project, payload.image, prefix="projects")
     db.commit()
-    return project
+    return _project_out(project, [])
 
 
 @router.patch("/projects/{project_id}", response_model=schemas.ProjectOut)
@@ -303,12 +331,40 @@ def update_project(
     project.desc = payload.desc.strip()
     project.deadline = payload.deadline.strip()
     project.area_of_focus = _normalize_area_of_focus(payload.area_of_focus)
-    project.hours_volunteered = max(0, payload.hours_volunteered)
     project.beneficiaries_reached = max(0, payload.beneficiaries_reached)
     _apply_r2_image(project, payload.image, prefix="projects")
     db.commit()
     db.refresh(project)
-    return project
+    return _project_out(project, _updates_for(db, project.id))
+
+
+@router.post("/projects/{project_id}/updates", response_model=schemas.ProjectOut)
+def add_project_update(
+    project_id: int,
+    payload: schemas.ProjectUpdateCreate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Log a progress update — what's been done and the project's current
+    completion %. The lightweight follow-up flow, separate from editing
+    the project's core details (name, area, deadline, ...)."""
+    _require_manager(member)
+    project = db.get(models.Project, project_id)
+    if project is None or project.club_id != member.club_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    pct = max(0, min(100, payload.pct))
+    db.add(
+        models.ProjectUpdate(
+            project_id=project.id,
+            pct=pct,
+            note=payload.note.strip(),
+            created_by=member.id,
+        )
+    )
+    project.pct = pct
+    db.commit()
+    db.refresh(project)
+    return _project_out(project, _updates_for(db, project.id))
 
 
 @router.delete("/projects/{project_id}")
@@ -323,6 +379,9 @@ def delete_project(
         raise HTTPException(status_code=404, detail="Project not found")
     if project.storage_key:
         delete_gallery_image(project.storage_key)
+    db.query(models.ProjectUpdate).filter(
+        models.ProjectUpdate.project_id == project.id
+    ).delete(synchronize_session=False)
     db.delete(project)
     db.commit()
     return {"deleted": True}
