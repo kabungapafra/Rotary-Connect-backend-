@@ -143,7 +143,9 @@ class ClubCreate(BaseModel):
 
 
 class PresidentCredentials(BaseModel):
+    id: int
     name: str
+    phone: str
     member_number: str
     pin: str
 

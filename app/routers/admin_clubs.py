@@ -103,7 +103,11 @@ def create_club(
         db.add(president)
         db.flush()
         president_out = schemas.PresidentCredentials(
-            name=president.name, member_number=president.member_number, pin=pin
+            id=president.id,
+            name=president.name,
+            phone=president.phone,
+            member_number=president.member_number,
+            pin=pin,
         )
         background_tasks.add_task(
             send_sms,
