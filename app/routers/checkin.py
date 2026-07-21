@@ -14,7 +14,7 @@ from ..event_announcements import (
     parse_event_time,
 )
 from ..rate_limit import rate_limit_ok
-from ..security import get_current_member
+from ..security import get_current_member, get_optional_member
 from ..seed import DEFAULT_CLUB_NAME
 from ..sms import normalize_ugandan_phone
 from ..utils import get_or_create_meeting
@@ -214,18 +214,24 @@ def visitor_club(club_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/today", response_model=schemas.TodayResponse)
-def today(db: Session = Depends(get_db)):
-    """Unauthenticated by design — the mobile app calls this before login to
-    show who's already checked in at the door. It only ever shows one club
-    (no legitimate caller sends a club_id), so this always resolves to the
-    seeded default club rather than accepting one from the request: an
+def today(
+    db: Session = Depends(get_db),
+    member: models.Member | None = Depends(get_optional_member),
+):
+    """Auth is optional — a logged-in member (this is also what the app's
+    "Who's here" button calls) sees their own club's roster. Logged out
+    (or an unrecognized/expired token), this falls back to the seeded
+    default club rather than accepting a club_id from the request: an
     arbitrary club_id here would let anyone enumerate every club's roster
     and check-in times."""
     today_date = date.today()
-    default_club = (
-        db.query(models.Club).filter(models.Club.name == DEFAULT_CLUB_NAME).first()
-    )
-    club_id = default_club.id if default_club else None
+    if member is not None:
+        club_id = member.club_id
+    else:
+        default_club = (
+            db.query(models.Club).filter(models.Club.name == DEFAULT_CLUB_NAME).first()
+        )
+        club_id = default_club.id if default_club else None
     meeting = (
         db.query(models.Meeting)
         .filter(models.Meeting.club_id == club_id, models.Meeting.date == today_date)

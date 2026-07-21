@@ -147,6 +147,31 @@ def test_guest_check_in_throttles_after_five_requests_per_ip(client, test_club, 
     db.commit()
 
 
+def test_today_shows_the_authenticated_members_own_club(client, db, make_member, test_club):
+    """A logged-in member's "Who's here" view must show THEIR club's
+    roster. Previously /today ignored auth entirely and always resolved to
+    the seeded default club, so a real member's own check-in never showed
+    up here — not even to themselves."""
+    member = make_member(suffix="092")
+    meeting = models.Meeting(club_id=test_club.id, name="My Club Meeting", date=date.today())
+    db.add(meeting)
+    db.commit()
+    db.refresh(meeting)
+    db.add(models.CheckIn(member_id=member.id, meeting_id=meeting.id))
+    db.commit()
+
+    res = client.get("/checkin/today", headers=_auth(member))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["meeting_name"] == "My Club Meeting"
+    names = {m["name"] for m in body["members"]}
+    assert member.name in names
+
+    db.query(models.CheckIn).filter(models.CheckIn.meeting_id == meeting.id).delete()
+    db.query(models.Meeting).filter(models.Meeting.id == meeting.id).delete()
+    db.commit()
+
+
 def test_today_ignores_a_client_supplied_club_id(client, db, make_member):
     """The endpoint is unauthenticated and used to accept a club_id query
     param — anyone could enumerate any club's roster/check-in times by

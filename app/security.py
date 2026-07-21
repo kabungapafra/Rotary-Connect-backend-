@@ -76,6 +76,25 @@ def get_current_member(
     return member
 
 
+def get_optional_member(
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
+) -> models.Member | None:
+    """Same token decoding as get_current_member, but returns None instead
+    of raising 401 — for endpoints that behave differently for a logged-in
+    caller without requiring login (see checkin.today)."""
+    if token is None:
+        return None
+    try:
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
+        member_id = int(payload["sub"])
+    except (JWTError, KeyError, TypeError, ValueError):
+        return None
+    member = db.get(models.Member, member_id)
+    if member is None or member.status != "active":
+        return None
+    return member
+
+
 # ── admin auth ────────────────────────────────────────────────────────────
 # Separate token flavor (role="admin" claim) so a member token can never be
 # replayed against admin endpoints, without touching the member token shape
