@@ -1,6 +1,7 @@
-"""Secretary workspace: minutes and club-history entries are
-Secretary/President-only writes; reports are computed from real data, not
-fabricated numbers, and readable by any club member."""
+"""Secretary workspace: minutes are Secretary-only writes; club-history
+entries are also writable by the President and Immediate Past President;
+reports are computed from real data, not fabricated numbers, and readable
+by any club member."""
 
 import base64
 
@@ -77,6 +78,39 @@ def test_secretary_can_add_and_delete_milestone(client, make_member):
 
     res = client.get("/club/secretary/milestones", headers=_auth(secretary))
     assert not any(m["id"] == milestone_id for m in res.json())
+
+
+def test_president_and_ipp_can_edit_club_history_other_executives_cannot(
+    client, make_member
+):
+    """The Secretary owns minutes exclusively, but club history is shared
+    with the President and Immediate Past President — the roles who'd
+    actually know the club's own history. A Treasurer, despite also being
+    a privileged executive role, is not one of them."""
+    president = make_member(role="President", suffix="054", is_board=True)
+    ipp = make_member(role="Immediate Past President", suffix="055", is_board=True)
+    treasurer = make_member(role="Treasurer", suffix="056", is_board=True)
+
+    for editor in (president, ipp):
+        res = client.post(
+            "/club/secretary/milestones",
+            json={"year": "2026", "title": "Club chartered", "category": "Milestones"},
+            headers=_auth(editor),
+        )
+        assert res.status_code == 200
+        milestone_id = res.json()["id"]
+
+        res = client.delete(
+            f"/club/secretary/milestones/{milestone_id}", headers=_auth(editor)
+        )
+        assert res.status_code == 200
+
+    res = client.post(
+        "/club/secretary/milestones",
+        json={"year": "2026", "title": "Club chartered", "category": "Milestones"},
+        headers=_auth(treasurer),
+    )
+    assert res.status_code == 403
 
 
 def test_monthly_report_reflects_real_membership_count(client, make_member):

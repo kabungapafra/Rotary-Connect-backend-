@@ -31,6 +31,11 @@ EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
     "Board Director",
 }
 
+# Club history (milestones) is normally the Secretary's alone to edit, but
+# the President and Immediate Past President — the roles who'd know the
+# club's own history best — can too.
+HISTORY_EDITOR_ROLES = PRESIDENT_ROLES | {"Immediate Past President", "Secretary"}
+
 
 def _require_manager(member: models.Member) -> None:
     """Only the Club President or Secretary can add and manage the club's

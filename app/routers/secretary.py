@@ -20,7 +20,7 @@ from ..database import get_db
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_club_document
 from ..transcription import process_minute_audio
-from .club_members import PRESIDENT_ROLES
+from .club_members import HISTORY_EDITOR_ROLES, PRESIDENT_ROLES
 from .treasury import treasury_summary
 
 router = APIRouter(prefix="/club/secretary", tags=["secretary"])
@@ -33,6 +33,17 @@ def _require_secretary(member: models.Member) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the Club Secretary can manage this",
+        )
+
+
+def _require_history_editor(member: models.Member) -> None:
+    """Club history (milestones) is the one part of the Secretary
+    workspace also open to the President and Immediate Past President."""
+    if member.role not in HISTORY_EDITOR_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the President, Immediate Past President, or "
+            "Secretary can manage club history",
         )
 
 
@@ -261,7 +272,7 @@ def create_milestone(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_secretary(member)
+    _require_history_editor(member)
     if not payload.title.strip() or not payload.year.strip():
         raise HTTPException(status_code=422, detail="Year and title are required")
     milestone = models.Milestone(
@@ -290,7 +301,7 @@ def delete_milestone(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    _require_secretary(member)
+    _require_history_editor(member)
     milestone = db.get(models.Milestone, milestone_id)
     if milestone is None or milestone.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Milestone not found")
