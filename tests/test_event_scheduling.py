@@ -57,10 +57,18 @@ def test_registration_closes_15_minutes_before_the_end_time():
     assert is_registration_open("TUE", meta, now=before) is True
     assert is_registration_open("TUE", meta, now=inside) is False
     assert is_registration_open("TUE", meta, now=after_end) is False
-    # A different day of the week: this occurrence isn't today — open.
+    # A different day of the week, later this week: not its occurrence
+    # yet — open.
     assert is_registration_open("WED", meta, now=inside) is True
-    # No end time at all (legacy meta): never closes.
+    # No end time at all (legacy meta): never closes on its own day.
     assert is_registration_open("TUE", "6:00 PM - Hall", now=inside) is True
+    # A day EARLIER this week (e.g. viewing Tuesday's card on Wednesday,
+    # since the calendar always shows the current Mon-Sun): that
+    # occurrence already happened, closed regardless of time of day —
+    # even for a legacy meta with no parseable end time.
+    wednesday = datetime(2026, 7, 22, 8, 0, tzinfo=timezone.utc)
+    assert is_registration_open("TUE", meta, now=wednesday) is False
+    assert is_registration_open("TUE", "6:00 PM - Hall", now=wednesday) is False
 
 
 def test_event_locks_for_editing_only_once_fully_ended():
@@ -75,10 +83,16 @@ def test_event_locks_for_editing_only_once_fully_ended():
     assert is_event_editable("TUE", meta, now=during_registration_closed_window) is True
     assert is_event_editable("TUE", meta, now=just_before_end) is True
     assert is_event_editable("TUE", meta, now=after_end) is False
-    # A different day of the week: not today's occurrence — editable.
+    # A different day of the week, later this week: not its occurrence
+    # yet — editable.
     assert is_event_editable("WED", meta, now=after_end) is True
-    # No end time at all (legacy meta): never locks.
+    # No end time at all (legacy meta): never locks on its own day.
     assert is_event_editable("TUE", "6:00 PM - Hall", now=after_end) is True
+    # A day EARLIER this week: already happened, locked — even for a
+    # legacy meta with no parseable end time.
+    wednesday = datetime(2026, 7, 22, 8, 0, tzinfo=timezone.utc)
+    assert is_event_editable("TUE", meta, now=wednesday) is False
+    assert is_event_editable("TUE", "6:00 PM - Hall", now=wednesday) is False
 
 
 def test_next_occurrence_rolls_to_next_week_once_todays_time_has_passed():

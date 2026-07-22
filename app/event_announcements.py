@@ -94,18 +94,30 @@ def parse_event_end_time(meta: str) -> tuple[int, int] | None:
 REGISTRATION_CLOSE_LEAD_MINUTES = 15
 
 
+def _week_occurrence_date(dow: str, eat_today: date) -> date:
+    """The date this week's occurrence of `dow` falls on — the calendar
+    (Week view) always shows the current Mon-Sun, so a Tuesday event's
+    card sits on that real date all week, not just when today is Tuesday."""
+    monday = eat_today - timedelta(days=eat_today.weekday())
+    idx = _DOW_ORDER.index(dow.upper()[:3]) if dow.upper()[:3] in _DOW_ORDER else 2
+    return monday + timedelta(days=idx)
+
+
 def is_registration_open(dow: str, meta: str, now: datetime | None = None) -> bool:
-    """False from REGISTRATION_CLOSE_LEAD_MINUTES before the event's end
-    time until the end of that occurrence's (EAT) day — the event is over,
-    so its QR/registration link is closed. Events without a parseable end
-    time never close (legacy metas). Reopens the next day, when a new
-    registration would target the following week's occurrence anyway."""
-    end = parse_event_end_time(meta)
-    if end is None:
-        return True
+    """False once this week's occurrence has closed — either it's a
+    earlier day this week that's already fully over, or it's today and
+    we're within REGISTRATION_CLOSE_LEAD_MINUTES of its end time (or
+    past it). Still open for a later day this week (registration ahead
+    of that occurrence) and reopens for a new week once this one rolls
+    past Sunday. Events without a parseable end time never close on
+    their own day (legacy metas) but still close once the day's past."""
     now = now or datetime.now(timezone.utc)
     eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
-    if eat_today.strftime("%a").upper() != dow.upper()[:3]:
+    occurrence = _week_occurrence_date(dow, eat_today)
+    if occurrence != eat_today:
+        return occurrence > eat_today
+    end = parse_event_end_time(meta)
+    if end is None:
         return True
     closes_at = local_time_on_date_utc(*end, eat_today) - timedelta(
         minutes=REGISTRATION_CLOSE_LEAD_MINUTES
@@ -114,17 +126,20 @@ def is_registration_open(dow: str, meta: str, now: datetime | None = None) -> bo
 
 
 def is_event_editable(dow: str, meta: str, now: datetime | None = None) -> bool:
-    """False once today's occurrence has fully ended (its actual end time,
-    not registration's earlier 15-minute cutoff) — an event that already
-    happened shouldn't have its name/time/venue rewritten after the fact.
-    Events without a parseable end time are always editable (legacy
-    metas). Reopens the next day, same as is_registration_open."""
-    end = parse_event_end_time(meta)
-    if end is None:
-        return True
+    """False once this week's occurrence has fully ended — either an
+    earlier day this week already passed entirely, or it's today and
+    we're past its actual end time (not registration's earlier cutoff).
+    An event that already happened shouldn't have its name/time/venue
+    rewritten after the fact. Events without a parseable end time are
+    always editable on their own day (legacy metas), but still lock once
+    the day's past. Reopens for a new week, same as is_registration_open."""
     now = now or datetime.now(timezone.utc)
     eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
-    if eat_today.strftime("%a").upper() != dow.upper()[:3]:
+    occurrence = _week_occurrence_date(dow, eat_today)
+    if occurrence != eat_today:
+        return occurrence > eat_today
+    end = parse_event_end_time(meta)
+    if end is None:
         return True
     ends_at = local_time_on_date_utc(*end, eat_today)
     return now < ends_at
