@@ -482,6 +482,7 @@ def list_meetings(
         out.append(
             schemas.MeetingOut(
                 date=m.date.strftime("%d %b %Y"),
+                date_iso=m.date.isoformat(),
                 name=m.name,
                 checkin_count=len(rows),
                 attended=any(r.member_id == member.id for r in rows),

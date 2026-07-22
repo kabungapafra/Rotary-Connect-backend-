@@ -338,6 +338,7 @@ class MeetingAttendee(BaseModel):
 
 class MeetingOut(BaseModel):
     date: str
+    date_iso: str
     name: str
     checkin_count: int
     attended: bool  # whether the requesting member checked in
