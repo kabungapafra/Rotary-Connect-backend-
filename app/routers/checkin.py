@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -31,12 +31,22 @@ def _check_in_window_error(club_id: int, db: Session) -> str | None:
     Only enforced when at least one of today's events has a parseable time
     — a club with no schedulable event today (or an unparseable TIME &
     VENUE field) falls back to the old "any time" behavior rather than
-    blocking check-in on data the schedule can't account for."""
+    blocking check-in on data the schedule can't account for.
+
+    "Today's events" means a recurring weekly event whose dow matches today
+    (event_date is null), or a one-time event whose event_date is today —
+    a one-time event's dow alone doesn't count on any other date."""
     today = date.today()
     todays_dow = today.strftime("%a").upper()
     todays_events = (
         db.query(models.Event)
-        .filter(models.Event.club_id == club_id, models.Event.dow == todays_dow)
+        .filter(
+            models.Event.club_id == club_id,
+            or_(
+                (models.Event.event_date.is_(None)) & (models.Event.dow == todays_dow),
+                models.Event.event_date == today,
+            ),
+        )
         .all()
     )
     now = datetime.now(timezone.utc)
@@ -287,7 +297,10 @@ def today(
                 .filter(models.EventRsvp.event_id.in_(club_events.keys()))
                 .order_by(models.EventRsvp.created_at)
             ):
-                target = rsvp_target_date(club_events[r.event_id].dow, r.created_at.date())
+                rsvp_event = club_events[r.event_id]
+                target = rsvp_event.event_date or rsvp_target_date(
+                    rsvp_event.dow, r.created_at.date()
+                )
                 if target == today_date:
                     guests.append(
                         schemas.MeetingGuest(

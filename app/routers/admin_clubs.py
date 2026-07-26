@@ -36,6 +36,7 @@ def _to_out(club: models.Club) -> schemas.ClubOut:
         payment_status=compute_payment_status(club.next_due_date),
         joined=club.created_at.strftime("%d %b %Y"),
         logo=club.logo,
+        charter_date=format_display_date(club.charter_date),
     )
 
 
@@ -75,6 +76,7 @@ def create_club(
         fee_amount=payload.fee_amount or 0,
         last_paid_date=parse_display_date(payload.first_payment_date),
         next_due_date=parse_display_date(payload.next_due_date),
+        charter_date=parse_display_date(payload.charter_date),
     )
     db.add(club)
     db.flush()
@@ -128,6 +130,17 @@ def set_club_status(club_id: int, payload: schemas.ClubStatusUpdate, db: Session
     if payload.status not in ("active", "suspended"):
         raise HTTPException(status_code=422, detail="status must be 'active' or 'suspended'")
     club.status = payload.status
+    db.commit()
+    db.refresh(club)
+    return _to_out(club)
+
+
+@router.patch("/{club_id}/charter-date", response_model=schemas.ClubOut)
+def set_club_charter_date(
+    club_id: int, payload: schemas.ClubCharterDateUpdate, db: Session = Depends(get_db)
+):
+    club = _get_or_404(db, club_id)
+    club.charter_date = parse_display_date(payload.charter_date)
     db.commit()
     db.refresh(club)
     return _to_out(club)

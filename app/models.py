@@ -58,6 +58,10 @@ class Club(Base):
     name: Mapped[str] = mapped_column(String(160))
     district: Mapped[str] = mapped_column(String(20), default="")
     location: Mapped[str] = mapped_column(String(160), default="")
+    # The date the club was chartered — shown on the app's Home "Club
+    # history" card ("Chartered {date}"). Null for clubs onboarded before
+    # this field existed.
+    charter_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
     # "rotary" | "rotaract" — drives club-facing app branding (wordmark text,
     # accent color, wheel logo tint).
@@ -157,14 +161,19 @@ class Meeting(Base):
 
 
 class Event(Base):
-    """A club's recurring weekly event (the app's Events calendar works by
-    day-of-week, e.g. 'WED')."""
+    """A club's event — either recurring weekly (the default, works by
+    day-of-week, e.g. 'WED') or, when `event_date` is set, a one-time event
+    pinned to that exact calendar date (`dow` is still kept in sync, derived
+    from `event_date`, so dow-only code paths need no special-casing)."""
 
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
     dow: Mapped[str] = mapped_column(String(3), default="WED")
+    # Null for a recurring weekly event. Set for a one-time event — it only
+    # occurs on this date and never reopens/repeats.
+    event_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(160))
     meta: Mapped[str] = mapped_column(String(240), default="")
     # Public R2 URL for the event's banner photo, same storage approach as

@@ -310,6 +310,25 @@ def delete_milestone(
     return {"deleted": True}
 
 
+@router.patch("/charter-date")
+def set_charter_date(
+    payload: schemas.ClubCharterDateSelfUpdate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Lets the President, Immediate Past President, or Secretary set their
+    own club's charter date from within the app — the only club-profile
+    field editable by the club itself rather than the system admin, since
+    unlike district/logo/name it's plain historical fact the club knows and
+    the admin dashboard has no reason to ask about at onboarding."""
+    _require_history_editor(member)
+    member.club.charter_date = payload.charter_date
+    db.commit()
+    return {
+        "charter_date": payload.charter_date.isoformat() if payload.charter_date else None
+    }
+
+
 # ── reports (real data, computed on request) ─────────────────────────────
 
 def _role_holder(db: Session, club_id: int, roles: set[str]) -> str:

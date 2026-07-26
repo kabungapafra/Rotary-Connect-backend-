@@ -113,6 +113,41 @@ def test_president_and_ipp_can_edit_club_history_other_executives_cannot(
     assert res.status_code == 403
 
 
+def test_president_can_set_and_clear_charter_date(client, make_member, db):
+    # Unlike district/logo/name (set once by the system admin at onboarding),
+    # the charter date is plain historical fact the club itself knows, so
+    # it's the one club-profile field a President/Secretary edits in-app.
+    president = make_member(role="President", suffix="057", is_board=True)
+
+    res = client.patch(
+        "/club/secretary/charter-date",
+        json={"charter_date": "2018-06-14"},
+        headers=_auth(president),
+    )
+    assert res.status_code == 200
+    assert res.json()["charter_date"] == "2018-06-14"
+    db.refresh(president.club)
+    assert president.club.charter_date.isoformat() == "2018-06-14"
+
+    res = client.patch(
+        "/club/secretary/charter-date",
+        json={"charter_date": None},
+        headers=_auth(president),
+    )
+    assert res.status_code == 200
+    assert res.json()["charter_date"] is None
+
+
+def test_plain_member_cannot_set_charter_date(client, make_member):
+    member = make_member(role="Member", suffix="058")
+    res = client.patch(
+        "/club/secretary/charter-date",
+        json={"charter_date": "2018-06-14"},
+        headers=_auth(member),
+    )
+    assert res.status_code == 403
+
+
 def test_monthly_report_reflects_real_membership_count(client, make_member):
     make_member(role="Member", suffix="054")
     viewer = make_member(role="Member", suffix="055")

@@ -110,6 +110,8 @@ def login(
         club_logo=member.club.logo,
         club_type=member.club.club_type,
         club_status="suspended" if is_club_access_blocked(member.club) else "active",
+        club_charter_date=member.club.charter_date.isoformat()
+        if member.club.charter_date else None,
     )
 
 

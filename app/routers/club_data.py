@@ -9,8 +9,10 @@ from ..database import get_db
 from ..event_announcements import (
     CHECKIN_LEAD_MINUTES,
     checkin_window_utc,
+    eat_today_date,
     is_event_editable,
     is_registration_open,
+    local_time_on_date_utc,
     next_occurrence_utc,
     parse_event_time,
     rsvp_target_date,
@@ -76,11 +78,12 @@ def list_events(
         schemas.EventOut(
             id=e.id,
             dow=e.dow,
+            event_date=e.event_date,
             name=e.name,
             meta=e.meta,
             image=e.image,
-            registration_open=is_registration_open(e.dow, e.meta),
-            editable=is_event_editable(e.dow, e.meta),
+            registration_open=is_registration_open(e.dow, e.meta, e.event_date),
+            editable=is_event_editable(e.dow, e.meta, e.event_date),
         )
         for e in events
     ]
@@ -91,11 +94,12 @@ def next_meeting(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    """The soonest upcoming occurrence across all of the club's weekly
-    events — real date/time/venue computed from each event's day-of-week
-    and parsed time, not a static placeholder. Once today's/this-week's
-    occurrence has passed, `next_occurrence_utc` naturally rolls to next
-    week, so this always reflects what's actually next.
+    """The soonest upcoming occurrence across all of the club's events —
+    both recurring weekly events (by day-of-week) and one-time dated
+    events — real date/time/venue computed from each, not a static
+    placeholder. Once a recurring event's this-week occurrence has passed,
+    `next_occurrence_utc` naturally rolls to next week; once a one-time
+    event's date has passed, it drops out of consideration entirely.
 
     Exception: while an event's check-in window is still open (same window
     `checkin.py` gates check-in on — opens 15 min before start, closes 1
@@ -113,7 +117,10 @@ def next_meeting(
     ongoing_event = None
     ongoing_dt = None
     for event in events:
-        if event.dow != todays_dow:
+        if event.event_date is not None:
+            if event.event_date != today:
+                continue
+        elif event.dow != todays_dow:
             continue
         parsed = parse_event_time(event.meta)
         if parsed is None:
@@ -132,10 +139,18 @@ def next_meeting(
         for event in events:
             parsed = parse_event_time(event.meta)
             hour, minute = parsed if parsed else (12, 0)
-            next_dt = next_occurrence_utc(event.dow, hour, minute, now=now)
+            if event.event_date is not None:
+                if event.event_date < today:
+                    continue  # a one-time event's date has come and gone
+                next_dt = local_time_on_date_utc(hour, minute, event.event_date)
+            else:
+                next_dt = next_occurrence_utc(event.dow, hour, minute, now=now)
             if best_dt is None or next_dt < best_dt:
                 best_dt, best_event = next_dt, event
         ongoing = False
+
+    if best_event is None:
+        raise HTTPException(status_code=404, detail="No events scheduled for this club yet")
 
     local_dt = best_dt + timedelta(hours=3)  # Africa/Kampala, fixed UTC+3
     parsed = parse_event_time(best_event.meta)
@@ -159,9 +174,22 @@ def create_event(
     _require_manager(member)
     if not payload.name.strip():
         raise HTTPException(status_code=422, detail="Event name is required")
+    if payload.event_date is not None and payload.event_date < eat_today_date():
+        raise HTTPException(
+            status_code=422, detail="Can't add an event on a day that's already past."
+        )
+    # A one-time event's dow is derived from its date, not trusted from the
+    # client — it's only ever used for display, but must stay in sync with
+    # event_date for the dow-only code paths (check-in, etc.) to work.
+    dow = (
+        payload.event_date.strftime("%a").upper()
+        if payload.event_date is not None
+        else (payload.dow.strip().upper()[:3] or "WED")
+    )
     event = models.Event(
         club_id=member.club_id,
-        dow=payload.dow.strip().upper()[:3] or "WED",
+        dow=dow,
+        event_date=payload.event_date,
         name=payload.name.strip(),
         meta=payload.meta.strip(),
     )
@@ -198,12 +226,24 @@ def update_event(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
-    if not is_event_editable(event.dow, event.meta):
+    if not is_event_editable(event.dow, event.meta, event.event_date):
         raise HTTPException(
             status_code=422,
             detail="This event has already ended and can no longer be edited.",
         )
-    event.dow = payload.dow.strip().upper()[:3] or event.dow
+    if payload.event_date is not None and payload.event_date < eat_today_date():
+        raise HTTPException(
+            status_code=422, detail="Can't move an event to a day that's already past."
+        )
+    # event_date is always reassigned (not just when set) so switching an
+    # event from one-time back to recurring (or vice versa) actually takes
+    # — omitting it here would leave a converted event stuck dated forever.
+    event.event_date = payload.event_date
+    event.dow = (
+        payload.event_date.strftime("%a").upper()
+        if payload.event_date is not None
+        else (payload.dow.strip().upper()[:3] or event.dow)
+    )
     event.name = payload.name.strip() or event.name
     event.meta = payload.meta.strip()
     _apply_r2_image(event, payload.image, prefix="events")
@@ -224,6 +264,16 @@ def delete_event(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
+    # A one-time event is locked from deletion once its date has passed —
+    # kept as a historical record, same as editing. Recurring events are
+    # deliberately left unrestricted: deleting one cancels the whole
+    # ongoing series, which isn't tied to whether this week's occurrence
+    # already happened.
+    if event.event_date is not None and event.event_date < eat_today_date():
+        raise HTTPException(
+            status_code=422,
+            detail="This event has already happened and can no longer be deleted.",
+        )
     unschedule_event_announcement(event.id)
     if event.storage_key:
         delete_gallery_image(event.storage_key)

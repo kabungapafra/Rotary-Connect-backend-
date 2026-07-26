@@ -45,6 +45,7 @@ class LoginResponse(BaseModel):
     club_logo: str | None = None
     club_type: str = "rotary"
     club_status: str = "active"
+    club_charter_date: str | None = None
 
 
 class GuestCheckInRequest(BaseModel):
@@ -140,6 +141,7 @@ class ClubOut(BaseModel):
     payment_status: str
     joined: str
     logo: str | None = None
+    charter_date: str | None = None
 
 
 class ClubCreate(BaseModel):
@@ -152,6 +154,7 @@ class ClubCreate(BaseModel):
     first_payment_date: str | None = None
     next_due_date: str | None = None
     logo: str | None = None
+    charter_date: str | None = None
     # The club's first administrator (the Club President), created by the
     # system admin together with the club itself.
     president_name: str = ""
@@ -175,6 +178,14 @@ class ClubCreateResponse(BaseModel):
 
 class ClubStatusUpdate(BaseModel):
     status: str  # active | suspended
+
+
+class ClubCharterDateUpdate(BaseModel):
+    charter_date: str | None = None  # "DD Mon YYYY", or null to clear
+
+
+class ClubCharterDateSelfUpdate(BaseModel):
+    charter_date: date | None = None  # ISO "YYYY-MM-DD", or null to clear
 
 
 class PaymentRecord(BaseModel):
@@ -240,6 +251,9 @@ class EventOut(BaseModel):
 
     id: int
     dow: str
+    # Set for a one-time event pinned to this exact date; null for a
+    # recurring weekly event.
+    event_date: date | None = None
     name: str
     meta: str
     image: str | None = None  # public R2 URL
@@ -267,6 +281,10 @@ class VisitorClubOut(BaseModel):
 
 class EventCreate(BaseModel):
     dow: str = "WED"
+    # When provided, creates/updates a one-time event pinned to this date
+    # instead of a recurring weekly one (dow is then derived from it
+    # server-side, ignoring the dow field above).
+    event_date: date | None = None
     name: str
     meta: str = ""
     # "data:image/...;base64,..." to set/replace the banner photo; the

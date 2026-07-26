@@ -40,3 +40,48 @@ def test_president_dob_is_saved_from_the_wizard(client, db):
     db.commit()
     db.query(models.Club).filter(models.Club.id == club_id).delete()
     db.commit()
+
+
+def test_charter_date_is_saved_at_onboarding(client, db):
+    res = client.post(
+        "/admin/clubs",
+        json={"name": "Charter Test Club", "charter_date": "14 Jun 2018"},
+        headers=_admin_auth(db),
+    )
+    assert res.status_code == 200, res.json()
+    body = res.json()
+    assert body["club"]["charter_date"] == "14 Jun 2018"
+
+    club_id = body["club"]["id"]
+    club = db.get(models.Club, club_id)
+    assert club.charter_date.isoformat() == "2018-06-14"
+    db.delete(club)
+    db.commit()
+
+
+def test_charter_date_can_be_set_and_cleared_after_onboarding(client, db):
+    # Onboarding is the only place ClubCreate.charter_date is set — this is
+    # the sole path for a club that predates the field (or was created
+    # without it) to ever get one.
+    res = client.post("/admin/clubs", json={"name": "Charter Patch Club"}, headers=_admin_auth(db))
+    club_id = res.json()["club"]["id"]
+    assert res.json()["club"]["charter_date"] is None
+
+    res = client.patch(
+        f"/admin/clubs/{club_id}/charter-date",
+        json={"charter_date": "01 Jan 2020"},
+        headers=_admin_auth(db),
+    )
+    assert res.status_code == 200, res.json()
+    assert res.json()["charter_date"] == "01 Jan 2020"
+
+    res = client.patch(
+        f"/admin/clubs/{club_id}/charter-date",
+        json={"charter_date": None},
+        headers=_admin_auth(db),
+    )
+    assert res.status_code == 200, res.json()
+    assert res.json()["charter_date"] is None
+
+    db.query(models.Club).filter(models.Club.id == club_id).delete()
+    db.commit()

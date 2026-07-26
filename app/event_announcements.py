@@ -103,45 +103,67 @@ def _week_occurrence_date(dow: str, eat_today: date) -> date:
     return monday + timedelta(days=idx)
 
 
-def is_registration_open(dow: str, meta: str, now: datetime | None = None) -> bool:
-    """False once this week's occurrence has closed — either it's a
-    earlier day this week that's already fully over, or it's today and
-    we're within REGISTRATION_CLOSE_LEAD_MINUTES of its end time (or
-    past it). Still open for a later day this week (registration ahead
-    of that occurrence) and reopens for a new week once this one rolls
-    past Sunday. Events without a parseable end time never close on
-    their own day (legacy metas) but still close once the day's past."""
+def eat_today_date(now: datetime | None = None) -> date:
+    """Today's calendar date in Africa/Kampala (fixed UTC+3) — shared by
+    every "is this event's day past/today/future" check below and by
+    club_data.py's past-date guards on creating/editing/deleting events."""
     now = now or datetime.now(timezone.utc)
-    eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
-    occurrence = _week_occurrence_date(dow, eat_today)
-    if occurrence != eat_today:
-        return occurrence > eat_today
+    return (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
+
+
+def is_registration_open(
+    dow: str, meta: str, event_date: date | None = None, now: datetime | None = None
+) -> bool:
+    """False once the relevant occurrence has closed — either it's an
+    earlier day (this week for a recurring event, or a one-time event's
+    single date) that's already fully over, or it's today and we're within
+    REGISTRATION_CLOSE_LEAD_MINUTES of its end time (or past it).
+
+    A recurring event (`event_date` is None) is still open for a later day
+    this week and reopens for a new week once this one rolls past Sunday.
+    A one-time event (`event_date` set) is open any day before its date and
+    closes permanently once its date has passed — it never reopens.
+
+    Events without a parseable end time never close on their own day
+    (legacy metas) but still close once the day's past."""
+    now = now or datetime.now(timezone.utc)
+    today = eat_today_date(now)
+    occurrence = event_date if event_date is not None else _week_occurrence_date(dow, today)
+    if occurrence != today:
+        return occurrence > today
     end = parse_event_end_time(meta)
     if end is None:
         return True
-    closes_at = local_time_on_date_utc(*end, eat_today) - timedelta(
+    closes_at = local_time_on_date_utc(*end, today) - timedelta(
         minutes=REGISTRATION_CLOSE_LEAD_MINUTES
     )
     return now < closes_at
 
 
-def is_event_editable(dow: str, meta: str, now: datetime | None = None) -> bool:
-    """False once this week's occurrence has fully ended — either an
-    earlier day this week already passed entirely, or it's today and
-    we're past its actual end time (not registration's earlier cutoff).
-    An event that already happened shouldn't have its name/time/venue
-    rewritten after the fact. Events without a parseable end time are
-    always editable on their own day (legacy metas), but still lock once
-    the day's past. Reopens for a new week, same as is_registration_open."""
+def is_event_editable(
+    dow: str, meta: str, event_date: date | None = None, now: datetime | None = None
+) -> bool:
+    """False once the relevant occurrence has fully ended — either an
+    earlier day already passed entirely (this week for a recurring event,
+    or permanently for a one-time event once its date is past), or it's
+    today and we're past its actual end time (not registration's earlier
+    cutoff). An event that already happened shouldn't have its
+    name/time/venue rewritten after the fact — nor, for a one-time event,
+    be deletable any more (see club_data.delete_event).
+
+    Events without a parseable end time are always editable on their own
+    day (legacy metas), but still lock once the day's past. A recurring
+    event reopens for a new week, same as is_registration_open; a one-time
+    event never reopens."""
     now = now or datetime.now(timezone.utc)
-    eat_today = (now + timedelta(hours=_EAT_OFFSET_HOURS)).date()
-    occurrence = _week_occurrence_date(dow, eat_today)
-    if occurrence != eat_today:
-        return occurrence > eat_today
+    today = eat_today_date(now)
+    occurrence = event_date if event_date is not None else _week_occurrence_date(dow, today)
+    if occurrence != today:
+        return occurrence > today
     end = parse_event_end_time(meta)
     if end is None:
         return True
-    ends_at = local_time_on_date_utc(*end, eat_today)
+    ends_at = local_time_on_date_utc(*end, today)
     return now < ends_at
 
 
@@ -353,8 +375,60 @@ def _send_event_thank_you(event_id: int) -> None:
         db.close()
 
 
+def _schedule_dated_event_announcement(
+    event: models.Event, parsed: tuple[int, int]
+) -> bool:
+    """One-shot ("date" trigger) reminder + thank-you pair for a one-time
+    event, instead of `schedule_event_announcement`'s recurring cron pair."""
+    reminder_at = local_time_on_date_utc(*parsed, event.event_date) - timedelta(
+        hours=_REMINDER_LEAD_HOURS
+    )
+    thank_you_at = local_time_on_date_utc(*parsed, event.event_date) + timedelta(
+        hours=_THANK_YOU_LAG_HOURS
+    )
+    now = datetime.now(timezone.utc)
+    reminder_id = _reminder_job_id(event.id)
+    if reminder_at > now:
+        scheduler.add_job(
+            _send_event_reminder,
+            "date",
+            run_date=reminder_at,
+            args=[event.id],
+            id=reminder_id,
+            replace_existing=True,
+        )
+    else:
+        try:
+            scheduler.remove_job(reminder_id)
+        except JobLookupError:
+            pass
+    thank_you_id = _thank_you_job_id(event.id)
+    if thank_you_at > now:
+        scheduler.add_job(
+            _send_event_thank_you,
+            "date",
+            run_date=thank_you_at,
+            args=[event.id],
+            id=thank_you_id,
+            replace_existing=True,
+        )
+    else:
+        try:
+            scheduler.remove_job(thank_you_id)
+        except JobLookupError:
+            pass
+    return True
+
+
 def schedule_event_announcement(event: models.Event) -> bool:
-    """(Re)schedule the recurring reminder + thank-you pair for one event.
+    """(Re)schedule the reminder + thank-you pair for one event. A
+    recurring event gets recurring weekly cron jobs, same as always. A
+    one-time event (`event.event_date` set) gets one-shot jobs pinned to
+    that exact date instead, and any firing already in the past (e.g. this
+    event's date has been and gone, or the server restarted after the
+    reminder time already passed today) is simply skipped rather than
+    scheduled to fire immediately.
+
     Returns False (and unschedules any existing jobs) if `meta` has no
     parseable time."""
     parsed = parse_event_time(event.meta)
@@ -365,6 +439,8 @@ def schedule_event_announcement(event: models.Event) -> bool:
             event.id, event.name, event.meta,
         )
         return False
+    if event.event_date is not None:
+        return _schedule_dated_event_announcement(event, parsed)
     reminder_dow, reminder_hour, reminder_minute = _shifted_cron(
         event.dow, *parsed, -_REMINDER_LEAD_HOURS
     )

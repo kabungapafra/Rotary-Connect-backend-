@@ -294,6 +294,9 @@ def on_startup() -> None:
             text("ALTER TABLE events ADD COLUMN IF NOT EXISTS storage_key TEXT")
         )
         conn.execute(
+            text("ALTER TABLE events ADD COLUMN IF NOT EXISTS event_date DATE")
+        )
+        conn.execute(
             text(
                 "ALTER TABLE event_rsvps ADD COLUMN IF NOT EXISTS "
                 "attendee_type VARCHAR(40) DEFAULT 'Guest'"
@@ -312,6 +315,9 @@ def on_startup() -> None:
         )
         conn.execute(
             text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS logo_storage_key TEXT")
+        )
+        conn.execute(
+            text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS charter_date DATE")
         )
         conn.execute(
             text("ALTER TABLE minutes ADD COLUMN IF NOT EXISTS body TEXT DEFAULT ''")

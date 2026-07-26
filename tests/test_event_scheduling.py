@@ -4,7 +4,7 @@ the arithmetic that has to be right or members get reminded (or not
 reminded) at the wrong time.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from app.event_announcements import (
     _shifted_cron,
@@ -93,6 +93,45 @@ def test_event_locks_for_editing_only_once_fully_ended():
     wednesday = datetime(2026, 7, 22, 8, 0, tzinfo=timezone.utc)
     assert is_event_editable("TUE", meta, now=wednesday) is False
     assert is_event_editable("TUE", "6:00 PM - Hall", now=wednesday) is False
+
+
+def test_dated_event_open_and_editable_any_day_before_its_date():
+    # A one-time event a week out — unlike a recurring dow, "not today yet"
+    # never depends on which day of the week "now" happens to be.
+    meta = "6:00 PM to 8:00 PM · Hall"
+    event_date = date(2026, 7, 29)  # a Wednesday
+    now = datetime(2026, 7, 21, 8, 0, tzinfo=timezone.utc)  # the Tuesday before
+    assert is_registration_open("WED", meta, event_date=event_date, now=now) is True
+    assert is_event_editable("WED", meta, event_date=event_date, now=now) is True
+
+
+def test_dated_event_uses_its_own_date_for_the_same_day_cutoffs():
+    # On the event's actual date, the end-time cutoffs behave exactly like
+    # a recurring event's "today" — just anchored to event_date instead of
+    # `_week_occurrence_date`.
+    meta = "6:00 PM to 8:00 PM · Hall"
+    event_date = date(2026, 7, 21)  # Tuesday
+    before = datetime(2026, 7, 21, 16, 30, tzinfo=timezone.utc)
+    inside_registration_cutoff = datetime(2026, 7, 21, 16, 50, tzinfo=timezone.utc)
+    after_end = datetime(2026, 7, 21, 18, 30, tzinfo=timezone.utc)
+    assert is_registration_open("TUE", meta, event_date=event_date, now=before) is True
+    assert (
+        is_registration_open("TUE", meta, event_date=event_date, now=inside_registration_cutoff)
+        is False
+    )
+    assert is_event_editable("TUE", meta, event_date=event_date, now=inside_registration_cutoff) is True
+    assert is_event_editable("TUE", meta, event_date=event_date, now=after_end) is False
+
+
+def test_dated_event_never_reopens_once_its_date_has_passed():
+    # A recurring event's earlier-this-week occurrence reopens next week;
+    # a one-time event's date passing is permanent, no matter how far in
+    # the future "now" is checked.
+    meta = "6:00 PM - Hall"  # legacy meta, no parseable end time
+    event_date = date(2026, 7, 21)
+    a_month_later = datetime(2026, 8, 21, 8, 0, tzinfo=timezone.utc)
+    assert is_registration_open("TUE", meta, event_date=event_date, now=a_month_later) is False
+    assert is_event_editable("TUE", meta, event_date=event_date, now=a_month_later) is False
 
 
 def test_next_occurrence_rolls_to_next_week_once_todays_time_has_passed():

@@ -65,7 +65,7 @@ def get_event_registration(
     event = db.get(models.Event, event_id)
     if event is None or event.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Event not found")
-    if not is_registration_open(event.dow, event.meta):
+    if not is_registration_open(event.dow, event.meta, event.event_date):
         raise HTTPException(
             status_code=422,
             detail="Registration has closed — today's event is ending.",
@@ -189,7 +189,7 @@ def rsvp_form(event_id: int, request: Request, db: Session = Depends(get_db)):
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     club = db.get(models.Club, event.club_id)
-    if not is_registration_open(event.dow, event.meta):
+    if not is_registration_open(event.dow, event.meta, event.event_date):
         return HTMLResponse(_registration_closed_page(event, club))
 
     known_phone = request.cookies.get(_COOKIE_PHONE, "")
@@ -223,7 +223,7 @@ def rsvp_submit(
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     club = db.get(models.Club, event.club_id)
-    if not is_registration_open(event.dow, event.meta):
+    if not is_registration_open(event.dow, event.meta, event.event_date):
         return HTMLResponse(_registration_closed_page(event, club))
     clean_name = name.strip()[:120]
     clean_phone = normalize_ugandan_phone(phone)

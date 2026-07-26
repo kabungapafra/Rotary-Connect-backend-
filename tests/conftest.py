@@ -5,6 +5,8 @@ up in teardown, and CI (see .github/workflows/backend.yml) gets full
 isolation for free from a fresh, disposable Postgres service container.
 """
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -161,8 +163,17 @@ def make_event(db, test_club):
     # pattern as make_member above).
     created_ids = []
 
-    def _make(dow="WED", name="Pytest Fellowship", meta="6:00 PM - Hall"):
-        event = models.Event(club_id=test_club.id, dow=dow, name=name, meta=meta)
+    def _make(dow=None, name="Pytest Fellowship", meta="6:00 PM - Hall", event_date=None):
+        # Defaults to *today's* real weekday, not a fixed "WED" — a
+        # hardcoded day is only "this week's occurrence" (open/editable)
+        # when the suite happens to run on or before that weekday; on any
+        # later day in the week it reads as already past and locked,
+        # which used to make these tests flaky depending on the calendar.
+        if dow is None:
+            dow = date.today().strftime("%a").upper()
+        event = models.Event(
+            club_id=test_club.id, dow=dow, name=name, meta=meta, event_date=event_date
+        )
         db.add(event)
         db.commit()
         db.refresh(event)

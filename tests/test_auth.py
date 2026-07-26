@@ -8,6 +8,8 @@ them, a nonexistent identifier gets the exact same response (no account
 enumeration), and the reset is capped at 3 per member per 30 days so it
 can't be used to spam SMS costs at one member's phone."""
 
+from datetime import date
+
 from app.routers import auth
 
 
@@ -18,6 +20,25 @@ def test_login_succeeds_with_correct_pin(client, make_member):
     body = res.json()
     assert body["access_token"]
     assert body["member"]["name"] == member.name
+
+
+def test_login_returns_the_club_charter_date(client, db, test_club, make_member):
+    # The Home screen's "Club history" card reads this to show "Chartered
+    # {date}" instead of a raw milestone-entry count — if login stops
+    # returning it, that card silently falls back to generic copy.
+    test_club.charter_date = date(2018, 6, 14)
+    db.commit()
+    member = make_member(pin="4321")
+    res = client.post("/auth/login", json={"identifier": member.member_number, "pin": "4321"})
+    assert res.status_code == 200
+    assert res.json()["club_charter_date"] == "2018-06-14"
+
+
+def test_login_omits_charter_date_when_club_has_none(client, make_member):
+    member = make_member(pin="4321")
+    res = client.post("/auth/login", json={"identifier": member.member_number, "pin": "4321"})
+    assert res.status_code == 200
+    assert res.json()["club_charter_date"] is None
 
 
 def test_login_rejects_wrong_pin(client, make_member):
