@@ -62,6 +62,12 @@ class Club(Base):
     # history" card ("Chartered {date}"). Null for clubs onboarded before
     # this field existed.
     charter_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # The rest of the Club History screen's "CHARTERED" banner — like
+    # charter_date, self-service via PATCH /club/secretary/charter-info
+    # rather than admin-only, since it's historical fact the club knows.
+    charter_founding_members: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    charter_president: Mapped[str] = mapped_column(String(160), default="")
+    charter_sponsor_club: Mapped[str] = mapped_column(String(160), default="")
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
     # "rotary" | "rotaract" — drives club-facing app branding (wordmark text,
     # accent color, wheel logo tint).
@@ -575,6 +581,24 @@ class Milestone(Base):
     title: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(40), default="Milestones")
     text: Mapped[str] = mapped_column(String(500), default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PastLeaderTerm(Base):
+    """One row per past leadership term on the Club History screen's
+    "Past presidents & secretaries" list — entirely secretary-authored,
+    same pattern as Milestone."""
+
+    __tablename__ = "past_leader_terms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    years: Mapped[str] = mapped_column(String(20))  # e.g. "2018/19"
+    president: Mapped[str] = mapped_column(String(160))
+    secretary: Mapped[str] = mapped_column(String(160), default="")
     created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

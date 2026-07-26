@@ -329,6 +329,87 @@ def set_charter_date(
     }
 
 
+@router.patch("/charter-info")
+def set_charter_info(
+    payload: schemas.ClubCharterInfoSelfUpdate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """The rest of the "CHARTERED" banner alongside charter_date — founding
+    member count, charter president, sponsoring club."""
+    _require_history_editor(member)
+    club = member.club
+    club.charter_founding_members = payload.founding_members
+    club.charter_president = payload.charter_president.strip()
+    club.charter_sponsor_club = payload.sponsor_club.strip()
+    db.commit()
+    return {
+        "founding_members": club.charter_founding_members,
+        "charter_president": club.charter_president,
+        "sponsor_club": club.charter_sponsor_club,
+    }
+
+
+# ── club history / past leaders ──────────────────────────────────────────
+
+@router.get("/past-leaders", response_model=list[schemas.PastLeaderTermOut])
+def list_past_leaders(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    rows = (
+        db.query(models.PastLeaderTerm)
+        .filter(models.PastLeaderTerm.club_id == member.club_id)
+        .order_by(models.PastLeaderTerm.years.desc(), models.PastLeaderTerm.created_at.desc())
+        .all()
+    )
+    return [
+        schemas.PastLeaderTermOut(
+            id=r.id, years=r.years, president=r.president, secretary=r.secretary
+        )
+        for r in rows
+    ]
+
+
+@router.post("/past-leaders", response_model=schemas.PastLeaderTermOut)
+def create_past_leader(
+    payload: schemas.PastLeaderTermCreate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    _require_history_editor(member)
+    if not payload.years.strip() or not payload.president.strip():
+        raise HTTPException(status_code=422, detail="Years and president are required")
+    term = models.PastLeaderTerm(
+        club_id=member.club_id,
+        years=payload.years.strip(),
+        president=payload.president.strip(),
+        secretary=payload.secretary.strip(),
+        created_by=member.id,
+    )
+    db.add(term)
+    db.commit()
+    db.refresh(term)
+    return schemas.PastLeaderTermOut(
+        id=term.id, years=term.years, president=term.president, secretary=term.secretary
+    )
+
+
+@router.delete("/past-leaders/{term_id}")
+def delete_past_leader(
+    term_id: int,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    _require_history_editor(member)
+    term = db.get(models.PastLeaderTerm, term_id)
+    if term is None or term.club_id != member.club_id:
+        raise HTTPException(status_code=404, detail="Term not found")
+    db.delete(term)
+    db.commit()
+    return {"deleted": True}
+
+
 # ── reports (real data, computed on request) ─────────────────────────────
 
 def _role_holder(db: Session, club_id: int, roles: set[str]) -> str:

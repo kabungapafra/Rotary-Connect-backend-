@@ -320,6 +320,24 @@ def on_startup() -> None:
             text("ALTER TABLE clubs ADD COLUMN IF NOT EXISTS charter_date DATE")
         )
         conn.execute(
+            text(
+                "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS "
+                "charter_founding_members INTEGER"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS "
+                "charter_president VARCHAR(160) DEFAULT ''"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE clubs ADD COLUMN IF NOT EXISTS "
+                "charter_sponsor_club VARCHAR(160) DEFAULT ''"
+            )
+        )
+        conn.execute(
             text("ALTER TABLE minutes ADD COLUMN IF NOT EXISTS body TEXT DEFAULT ''")
         )
         # Postgres doesn't index FK columns automatically; these back the

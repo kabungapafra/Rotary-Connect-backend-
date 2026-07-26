@@ -112,6 +112,10 @@ def login(
         club_status="suspended" if is_club_access_blocked(member.club) else "active",
         club_charter_date=member.club.charter_date.isoformat()
         if member.club.charter_date else None,
+        club_district=member.club.district,
+        club_charter_founding_members=member.club.charter_founding_members,
+        club_charter_president=member.club.charter_president,
+        club_charter_sponsor_club=member.club.charter_sponsor_club,
     )
 
 

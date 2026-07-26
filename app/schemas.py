@@ -46,6 +46,11 @@ class LoginResponse(BaseModel):
     club_type: str = "rotary"
     club_status: str = "active"
     club_charter_date: str | None = None
+    # Rest of the Club History screen's "CHARTERED" banner.
+    club_district: str = ""
+    club_charter_founding_members: int | None = None
+    club_charter_president: str = ""
+    club_charter_sponsor_club: str = ""
 
 
 class GuestCheckInRequest(BaseModel):
@@ -186,6 +191,25 @@ class ClubCharterDateUpdate(BaseModel):
 
 class ClubCharterDateSelfUpdate(BaseModel):
     charter_date: date | None = None  # ISO "YYYY-MM-DD", or null to clear
+
+
+class ClubCharterInfoSelfUpdate(BaseModel):
+    founding_members: int | None = None
+    charter_president: str = ""
+    sponsor_club: str = ""
+
+
+class PastLeaderTermCreate(BaseModel):
+    years: str  # e.g. "2018/19"
+    president: str
+    secretary: str = ""
+
+
+class PastLeaderTermOut(BaseModel):
+    id: int
+    years: str
+    president: str
+    secretary: str
 
 
 class PaymentRecord(BaseModel):

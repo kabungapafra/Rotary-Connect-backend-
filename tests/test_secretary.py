@@ -148,6 +148,64 @@ def test_plain_member_cannot_set_charter_date(client, make_member):
     assert res.status_code == 403
 
 
+def test_president_can_set_charter_info(client, make_member):
+    president = make_member(role="President", suffix="059", is_board=True)
+    res = client.patch(
+        "/club/secretary/charter-info",
+        json={
+            "founding_members": 28,
+            "charter_president": "Rtn. Charles Mubiru",
+            "sponsor_club": "Rotary Club of Naalya",
+        },
+        headers=_auth(president),
+    )
+    assert res.status_code == 200, res.json()
+    body = res.json()
+    assert body["founding_members"] == 28
+    assert body["charter_president"] == "Rtn. Charles Mubiru"
+    assert body["sponsor_club"] == "Rotary Club of Naalya"
+
+
+def test_plain_member_cannot_set_charter_info(client, make_member):
+    member = make_member(role="Member", suffix="060")
+    res = client.patch(
+        "/club/secretary/charter-info",
+        json={"founding_members": 28, "charter_president": "x", "sponsor_club": "y"},
+        headers=_auth(member),
+    )
+    assert res.status_code == 403
+
+
+def test_secretary_can_add_and_delete_past_leader(client, make_member):
+    secretary = make_member(role="Secretary", suffix="061", is_board=True)
+    res = client.post(
+        "/club/secretary/past-leaders",
+        json={"years": "2018/19", "president": "Rtn. Charles Mubiru", "secretary": "Rtn. Annet Nansubuga"},
+        headers=_auth(secretary),
+    )
+    assert res.status_code == 200, res.json()
+    term_id = res.json()["id"]
+
+    res = client.get("/club/secretary/past-leaders", headers=_auth(secretary))
+    assert any(t["id"] == term_id for t in res.json())
+
+    res = client.delete(f"/club/secretary/past-leaders/{term_id}", headers=_auth(secretary))
+    assert res.status_code == 200
+
+    res = client.get("/club/secretary/past-leaders", headers=_auth(secretary))
+    assert not any(t["id"] == term_id for t in res.json())
+
+
+def test_plain_member_cannot_add_past_leader(client, make_member):
+    member = make_member(role="Member", suffix="062")
+    res = client.post(
+        "/club/secretary/past-leaders",
+        json={"years": "2018/19", "president": "x", "secretary": "y"},
+        headers=_auth(member),
+    )
+    assert res.status_code == 403
+
+
 def test_monthly_report_reflects_real_membership_count(client, make_member):
     make_member(role="Member", suffix="054")
     viewer = make_member(role="Member", suffix="055")
