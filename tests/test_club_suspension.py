@@ -77,3 +77,24 @@ def test_me_summary_reflects_the_same_blocked_state(client, db, test_club, make_
     res = client.get("/club/me/summary", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     assert res.json()["club_status"] == "suspended"
+
+
+def test_me_summary_reflects_charter_date_set_after_this_member_logged_in(
+    client, db, test_club, make_member
+):
+    """A member's Home screen only refreshes club-level branding fields
+    (charter date, etc.) at login — /club/me/summary is the opportunistic
+    refresh that catches them up without forcing a re-login once the
+    President sets the charter date mid-session, same self-heal pattern
+    as club_status above."""
+    member = make_member(pin="4321")
+    token = _login(client, member).json()["access_token"]
+    res = client.get("/club/me/summary", headers={"Authorization": f"Bearer {token}"})
+    assert res.json()["club_charter_date"] is None
+
+    test_club.charter_date = date(2018, 6, 14)
+    db.commit()
+
+    res = client.get("/club/me/summary", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200
+    assert res.json()["club_charter_date"] == "2018-06-14"

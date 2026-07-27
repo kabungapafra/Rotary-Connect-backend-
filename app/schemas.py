@@ -397,6 +397,14 @@ class MemberSummaryOut(BaseModel):
     club_status: str = "active"
     checked_in_today: bool = False
     week_streak: int = 0
+    # Refreshed here (not just at login) so a member who was already signed
+    # in when the President set/changed these doesn't see stale values on
+    # the Home "Club history" card until their next login.
+    club_charter_date: str | None = None
+    club_district: str = ""
+    club_charter_founding_members: int | None = None
+    club_charter_president: str = ""
+    club_charter_sponsor_club: str = ""
 
 
 # ── club-level member management (Club President only) ─────────────────
