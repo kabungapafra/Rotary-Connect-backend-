@@ -223,6 +223,9 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.Milestone).filter(models.Milestone.club_id == club_id).delete(
         synchronize_session=False
     )
+    db.query(models.PastLeaderTerm).filter(models.PastLeaderTerm.club_id == club_id).delete(
+        synchronize_session=False
+    )
     db.query(models.ClubDuesSetting).filter(models.ClubDuesSetting.club_id == club_id).delete(
         synchronize_session=False
     )

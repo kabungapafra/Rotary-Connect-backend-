@@ -52,6 +52,42 @@ def test_full_handover_promotes_pe_and_rolls_ipp_forward(db, test_club, make_mem
     assert club.last_leadership_transition_year == 2026
 
 
+def test_handover_records_outgoing_president_and_secretary_as_past_leaders(
+    db, test_club, make_member
+):
+    president = make_member(role="Club President", suffix="150", is_board=True)
+    make_member(role="President-Elect", suffix="151", is_board=True)
+    secretary = make_member(role="Secretary", suffix="152", is_board=True)
+
+    run_leadership_transitions(db, today=JULY_1)
+
+    terms = (
+        db.query(models.PastLeaderTerm)
+        .filter(models.PastLeaderTerm.club_id == test_club.id)
+        .all()
+    )
+    assert len(terms) == 1
+    term = terms[0]
+    assert term.years == "2025/26"
+    assert term.president == f"Rtn. {president.name}"
+    assert term.secretary == f"Rtn. {secretary.name}"
+
+
+def test_first_ever_handover_records_no_past_leader(db, test_club, make_member):
+    # No outgoing President to record yet — a fresh club's very first PE
+    # promotion shouldn't fabricate a term with no real president.
+    make_member(role="President-Elect", suffix="153", is_board=True)
+
+    run_leadership_transitions(db, today=JULY_1)
+
+    terms = (
+        db.query(models.PastLeaderTerm)
+        .filter(models.PastLeaderTerm.club_id == test_club.id)
+        .all()
+    )
+    assert terms == []
+
+
 def test_no_president_elect_leaves_club_untouched_for_the_year(db, test_club, make_member):
     president = make_member(role="Club President", suffix="107", is_board=True)
     secretary = make_member(role="Secretary", suffix="108", is_board=True)

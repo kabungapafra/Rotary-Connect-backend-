@@ -45,6 +45,7 @@ def _transition_club(db: Session, club: models.Club, rotary_year: int) -> None:
     members = db.query(models.Member).filter(models.Member.club_id == club.id).all()
     president = next((m for m in members if m.role in PRESIDENT_ROLES), None)
     president_elect = next((m for m in members if m.role == PE_ROLE), None)
+    secretary = next((m for m in members if m.role == "Secretary"), None)
 
     if president_elect is None:
         # Nothing to promote into — leave the club exactly as-is. Marking
@@ -54,6 +55,21 @@ def _transition_club(db: Session, club: models.Club, rotary_year: int) -> None:
         club.last_leadership_transition_year = rotary_year
         db.commit()
         return
+
+    # Record the just-ended term on the Club History screen's "Past
+    # presidents & secretaries" list — this is the one moment the sitting
+    # President/Secretary are known for certain, before their roles get
+    # cleared below. No entry is added the first time a club transitions
+    # (there's no outgoing President yet to record).
+    if president is not None:
+        honorific = "Ract" if club.club_type == "rotaract" else "Rtn"
+        db.add(models.PastLeaderTerm(
+            club_id=club.id,
+            years=f"{rotary_year - 1}/{str(rotary_year)[2:]}",
+            president=f"{honorific}. {president.name}",
+            secretary=f"{honorific}. {secretary.name}" if secretary else "",
+            created_by=president_elect.id,
+        ))
 
     # Every other board seat (including whoever was IPP) is cleared back to
     # a plain Member — the new President reassigns the cabinet themselves.
