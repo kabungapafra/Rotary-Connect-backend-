@@ -8,7 +8,7 @@ club's roster (the fix for the unauthenticated cross-club enumeration —
 a request must not be able to pull a different club's data by passing a
 club_id, regardless of which club's data would otherwise be returned)."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app import models, security
 from app.seed import DEFAULT_CLUB_NAME
@@ -123,6 +123,31 @@ def test_guest_check_in_respects_the_meeting_window(client, test_club, db, make_
 
     db.query(models.GuestVisit).filter(models.GuestVisit.club_id == test_club.id).delete()
     db.commit()
+
+
+def test_check_in_closes_at_the_events_actual_end_time_not_the_fixed_fallback(
+    client, test_club, db, make_event
+):
+    """A meta with an explicit start-to-end range (e.g. "6:00 PM to 6:30 PM")
+    must close check-in at that real end time, not the fixed 60-minute
+    fallback window used when no end time is given. Previously check-in used
+    the fixed fallback regardless, so a short 30-minute event stayed open
+    for check-in for a further 30 minutes after it had actually ended."""
+    todays_dow = date.today().strftime("%a").upper()
+    local_now = datetime.now(timezone.utc) + timedelta(hours=3)  # EAT offset
+    start = local_now - timedelta(minutes=45)
+    end = start + timedelta(minutes=30)  # event actually ended 15 minutes ago
+    make_event(
+        dow=todays_dow,
+        meta=f"{start.hour}:{start.minute:02d} to {end.hour}:{end.minute:02d} - Hall",
+    )
+
+    res = client.post(
+        "/checkin/guest",
+        json={"club_id": test_club.id, "name": "Late Guest", "phone": "0772000097"},
+    )
+    assert res.status_code == 422
+    assert "closed" in res.json()["detail"].lower()
 
 
 def test_guest_check_in_throttles_after_five_requests_per_ip(client, test_club, db):

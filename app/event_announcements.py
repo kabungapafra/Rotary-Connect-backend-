@@ -223,15 +223,26 @@ def local_time_on_date_utc(local_hour: int, local_minute: int, on_date: date) ->
 
 
 def checkin_window_utc(
-    local_hour: int, local_minute: int, on_date: date
+    local_hour: int,
+    local_minute: int,
+    on_date: date,
+    end: tuple[int, int] | None = None,
 ) -> tuple[datetime, datetime]:
     """(opens_at, closes_at) in UTC for the check-in window around a
-    meeting starting at `local_hour:local_minute` on `on_date`."""
+    meeting starting at `local_hour:local_minute` on `on_date`. When the
+    event's meta carries an actual end time (`end`, from
+    parse_event_end_time), check-in closes there instead of the fixed
+    CHECKIN_WINDOW_MINUTES fallback — otherwise a longer event keeps
+    check-in open too briefly, and a shorter one keeps it open after it's
+    actually ended."""
     start = local_time_on_date_utc(local_hour, local_minute, on_date)
-    return (
-        start - timedelta(minutes=CHECKIN_LEAD_MINUTES),
-        start + timedelta(minutes=CHECKIN_WINDOW_MINUTES),
+    opens_at = start - timedelta(minutes=CHECKIN_LEAD_MINUTES)
+    closes_at = (
+        local_time_on_date_utc(*end, on_date)
+        if end is not None
+        else start + timedelta(minutes=CHECKIN_WINDOW_MINUTES)
     )
+    return opens_at, closes_at
 
 
 def rsvp_target_date(dow: str, created: date) -> date:

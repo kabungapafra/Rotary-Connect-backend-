@@ -9,8 +9,8 @@ from ..birthdays import wish_if_due
 from ..database import get_db
 from ..event_announcements import (
     CHECKIN_LEAD_MINUTES,
-    CHECKIN_WINDOW_MINUTES,
     checkin_window_utc,
+    parse_event_end_time,
     parse_event_time,
     rsvp_target_date,
 )
@@ -51,20 +51,23 @@ def _check_in_window_error(club_id: int, db: Session) -> str | None:
     )
     now = datetime.now(timezone.utc)
     checked_any = False
+    not_yet_open = False
     for event in todays_events:
         parsed = parse_event_time(event.meta)
         if parsed is None:
             continue
         checked_any = True
-        opens_at, closes_at = checkin_window_utc(*parsed, today)
+        end = parse_event_end_time(event.meta)
+        opens_at, closes_at = checkin_window_utc(*parsed, today, end)
         if opens_at <= now <= closes_at:
             return None
+        if now < opens_at:
+            not_yet_open = True
     if not checked_any:
         return None
-    return (
-        f"Check-in opens {CHECKIN_LEAD_MINUTES} minutes before the meeting "
-        f"and closes {CHECKIN_WINDOW_MINUTES // 60} hour after it starts."
-    )
+    if not_yet_open:
+        return f"Check-in opens {CHECKIN_LEAD_MINUTES} minutes before the meeting."
+    return "Check-in has closed for this meeting."
 
 
 # Per-IP throttle for the unauthenticated guest endpoint — the per-phone
