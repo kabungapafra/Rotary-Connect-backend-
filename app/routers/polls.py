@@ -13,9 +13,10 @@ router = APIRouter(prefix="/club/polls", tags=["polls"])
 
 VALID_TYPES = {"motion", "election", "draw"}
 
-# Everyone else only ever sees their own assignment — who got whom is
-# otherwise private between each giver and the organizers.
-FULL_DRAW_VIEW_ROLES = MANAGER_ROLES | {"Family of Rotary"}
+# Only Family of Rotary sees the full who-got-who roster — not even the
+# President/Secretary who ran the draw. Everyone else, managers included,
+# only ever sees their own assignment.
+FULL_DRAW_VIEW_ROLES = {"Family of Rotary"}
 
 
 def _require_manager(member: models.Member) -> None:
