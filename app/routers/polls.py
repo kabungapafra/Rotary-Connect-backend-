@@ -13,6 +13,10 @@ router = APIRouter(prefix="/club/polls", tags=["polls"])
 
 VALID_TYPES = {"motion", "election", "draw"}
 
+# Everyone else only ever sees their own assignment — who got whom is
+# otherwise private between each giver and the organizers.
+FULL_DRAW_VIEW_ROLES = MANAGER_ROLES | {"Family of Rotary"}
+
 
 def _require_manager(member: models.Member) -> None:
     # Deliberately not is_board: plain board members lost vote creation
@@ -33,9 +37,14 @@ def _poll_out(db: Session, poll: models.Poll, member: models.Member) -> schemas.
     my_vote = next((v.choice for v in votes if v.member_id == member.id), None)
     assignments = None
     if poll.assignments:
-        assignments = [
+        all_assignments = [
             schemas.DrawAssignment(giver=g, recipient=r) for g, r in json.loads(poll.assignments)
         ]
+        if member.role in FULL_DRAW_VIEW_ROLES:
+            assignments = all_assignments
+        else:
+            my_name = f"Rtn. {member.name}"
+            assignments = [a for a in all_assignments if a.giver == my_name]
     return schemas.PollOut(
         id=poll.id,
         type=poll.type,

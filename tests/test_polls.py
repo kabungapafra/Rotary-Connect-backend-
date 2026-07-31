@@ -121,6 +121,35 @@ def test_draw_pairs_every_member_with_someone_else_no_repeats_no_self(client, ma
     assert res.status_code == 422
 
 
+def test_draw_results_are_private_except_to_managers_and_family_of_rotary(
+    client, make_member
+):
+    # Who-got-who is sensitive (it's often a gift exchange) — only the
+    # organizers should see the full roster. Everyone else should only ever
+    # learn their own assignment, never anyone else's.
+    board = make_member(role="President", suffix="050", is_board=True, name="Priv Alice")
+    plain = make_member(role="Member", suffix="051", name="Priv Ben")
+    family = make_member(role="Family of Rotary", suffix="052", name="Priv Cara")
+
+    res = client.post(
+        "/club/polls", json={"type": "draw", "title": "Gift exchange"}, headers=_auth(board)
+    )
+    poll_id = res.json()["id"]
+    client.post(f"/club/polls/{poll_id}/draw", headers=_auth(board))
+
+    # A plain member sees only the one entry that's theirs.
+    res = client.get("/club/polls/active", headers=_auth(plain))
+    assignments = res.json()["assignments"]
+    assert len(assignments) == 1
+    assert assignments[0]["giver"] == "Rtn. Priv Ben"
+
+    # Family of Rotary sees everyone's, same as the President who ran it.
+    res = client.get("/club/polls/active", headers=_auth(family))
+    assert len(res.json()["assignments"]) == 3
+    res = client.get("/club/polls/active", headers=_auth(board))
+    assert len(res.json()["assignments"]) == 3
+
+
 def test_creating_a_new_poll_closes_the_previous_open_one(client, db, make_member):
     board = make_member(role="President", suffix="045", is_board=True)
 
