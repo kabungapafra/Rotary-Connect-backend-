@@ -94,14 +94,25 @@ def test_guest_check_in_respects_the_meeting_window(client, test_club, db, make_
     be held to the same door-side window as a logged-in member's self
     check-in — it was previously unguarded, letting a guest check in at any
     time of day regardless of whether a meeting was actually happening."""
-    todays_dow = date.today().strftime("%a").upper()
     now_utc = datetime.now(timezone.utc)
+    now_local = now_utc + timedelta(hours=3)  # fixed EAT offset
 
-    # A meeting time ~4 hours away in UTC terms — comfortably outside the
-    # 15-min-before/60-min-after window on either side, independent of
-    # exact minute rounding.
-    far_local_hour = (now_utc.hour + 4 + 3) % 24  # +3 for the fixed EAT offset
-    event = make_event(dow=todays_dow, meta=f"{far_local_hour}:00 - Hall")
+    # A meeting ~4 hours later *today* — comfortably outside the
+    # 15-min-before/60-min-after window either side. The window check only
+    # ever looks at events whose dow matches *today* (see
+    # _check_in_window_error's todays_dow query — a meeting on a different
+    # day of week isn't considered at all, so it wouldn't restrict today's
+    # check-in either way), so this must stay within today's date. Clamped
+    # to just before local midnight when the suite runs late enough that a
+    # flat +4h would roll into tomorrow — a naive hour-only modulo wrap
+    # used to land on a time earlier *today* instead, which read as an
+    # already-past meeting ("closed") rather than a future one ("not yet
+    # open") and made this test flaky depending on time of day.
+    far_local = now_local + timedelta(hours=4)
+    if far_local.date() != now_local.date():
+        far_local = now_local.replace(hour=23, minute=59, second=0, microsecond=0)
+    todays_dow = now_local.strftime("%a").upper()
+    event = make_event(dow=todays_dow, meta=f"{far_local.hour}:{far_local.minute:02d} - Hall")
 
     res = client.post(
         "/checkin/guest",
@@ -111,7 +122,7 @@ def test_guest_check_in_respects_the_meeting_window(client, test_club, db, make_
     assert "opens" in res.json()["detail"].lower()
 
     # Move the same event's start to right now — the window opens.
-    event.meta = f"{(now_utc.hour + 3) % 24}:{now_utc.minute:02d} - Hall"
+    event.meta = f"{now_local.hour}:{now_local.minute:02d} - Hall"
     db.commit()
 
     res = client.post(
