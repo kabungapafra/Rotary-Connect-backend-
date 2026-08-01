@@ -37,6 +37,7 @@ def test_delete_club_with_every_dependent_row(client, db, test_club, make_member
     db.add(models.GuestVisit(club_id=test_club.id, name="Visitor", phone="256700000002", visit_date=date.today()))
     db.add(models.GalleryPhoto(club_id=test_club.id, album="General", image="data:image/png;base64,x", uploaded_by=president.id))
     db.add(models.Apology(club_id=test_club.id, member_id=president.id, meeting_date=date.today(), reason="Travel"))
+    db.add(models.ClubVisitReport(club_id=test_club.id, member_id=president.id, visited_club_name="Rotary Club of Kampala North", meeting_date=date.today(), meeting_type="Club meeting"))
     db.add(models.ClubDuesSetting(club_id=test_club.id, amount=10000, period="quarterly"))
     db.add(models.DuesPayment(club_id=test_club.id, member_id=president.id, period_label="2026-Q3"))
     db.add(models.Transaction(club_id=test_club.id, kind="income", label="Dues", amount=10000, created_by=president.id))
@@ -73,6 +74,7 @@ def test_delete_member_with_every_dependent_row(client, db, test_club, make_memb
 
     db.add(models.GalleryPhoto(club_id=test_club.id, album="General", image="data:image/png;base64,x", uploaded_by=member.id))
     db.add(models.Apology(club_id=test_club.id, member_id=member.id, meeting_date=date.today(), reason="Travel"))
+    db.add(models.ClubVisitReport(club_id=test_club.id, member_id=member.id, visited_club_name="Rotary Club of Kampala North", meeting_date=date.today(), meeting_type="Club meeting"))
     db.add(models.DuesPayment(club_id=test_club.id, member_id=member.id, period_label="2026-Q3"))
     db.add(models.Transaction(club_id=test_club.id, kind="expense", label="Venue", amount=5000, created_by=member.id))
     db.add(models.Minute(club_id=test_club.id, title="Minutes", meeting_date=date.today(), created_by=member.id))

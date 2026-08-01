@@ -479,6 +479,24 @@ class ApologyOut(BaseModel):
     created_at: datetime
 
 
+class VisitReportCreate(BaseModel):
+    visited_club_name: str
+    meeting_date: str  # ISO date
+    meeting_type: str = "Club meeting"
+    notes: str = ""
+
+
+class VisitReportOut(BaseModel):
+    id: int
+    member_name: str
+    member_role: str
+    visited_club_name: str
+    meeting_date: str
+    meeting_type: str
+    notes: str
+    created_at: datetime
+
+
 class DuesSettingUpdate(BaseModel):
     amount: int
     period: str = "quarterly"  # quarterly | monthly | annual

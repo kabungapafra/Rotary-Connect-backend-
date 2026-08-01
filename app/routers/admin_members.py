@@ -167,6 +167,9 @@ def delete_member(member_id: int, db: Session = Depends(get_db)):
     db.query(models.Apology).filter(models.Apology.member_id == member_id).delete(
         synchronize_session=False
     )
+    db.query(models.ClubVisitReport).filter(
+        models.ClubVisitReport.member_id == member_id
+    ).delete(synchronize_session=False)
     db.query(models.Transaction).filter(models.Transaction.created_by == member_id).delete(
         synchronize_session=False
     )

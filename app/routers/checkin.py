@@ -122,6 +122,47 @@ def check_in(
     )
 
 
+@router.post("/visit-report", response_model=schemas.VisitReportOut)
+def submit_visit_report(
+    payload: schemas.VisitReportCreate,
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """A member reports a meeting they attended at another club after the
+    fact (there's no QR of theirs to scan) — shown to the Secretary to
+    manually credit as a make-up, same idea as an Apology but the other
+    way round."""
+    club_name = payload.visited_club_name.strip()
+    if not club_name:
+        raise HTTPException(status_code=422, detail="Enter which club you visited")
+    try:
+        meeting_date = date.fromisoformat(payload.meeting_date)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="meeting_date must be YYYY-MM-DD")
+
+    row = models.ClubVisitReport(
+        club_id=member.club_id,
+        member_id=member.id,
+        visited_club_name=club_name[:160],
+        meeting_date=meeting_date,
+        meeting_type=payload.meeting_type.strip()[:40] or "Club meeting",
+        notes=payload.notes.strip()[:500],
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return schemas.VisitReportOut(
+        id=row.id,
+        member_name=member.name,
+        member_role=member.role,
+        visited_club_name=row.visited_club_name,
+        meeting_date=row.meeting_date.isoformat(),
+        meeting_type=row.meeting_type,
+        notes=row.notes,
+        created_at=row.created_at,
+    )
+
+
 @router.post("/guest", response_model=schemas.GuestCheckInResponse)
 def guest_check_in(
     payload: schemas.GuestCheckInRequest,

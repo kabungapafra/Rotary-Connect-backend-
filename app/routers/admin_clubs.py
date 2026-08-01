@@ -210,6 +210,9 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.Apology).filter(models.Apology.club_id == club_id).delete(
         synchronize_session=False
     )
+    db.query(models.ClubVisitReport).filter(models.ClubVisitReport.club_id == club_id).delete(
+        synchronize_session=False
+    )
     db.query(models.DuesPayment).filter(models.DuesPayment.club_id == club_id).delete(
         synchronize_session=False
     )

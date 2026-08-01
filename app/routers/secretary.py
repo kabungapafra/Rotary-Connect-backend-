@@ -245,6 +245,37 @@ def delete_document(
     return {"deleted": True}
 
 
+# ── club visit reports ───────────────────────────────────────────────────
+
+@router.get("/visit-reports", response_model=list[schemas.VisitReportOut])
+def list_visit_reports(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    """Every member-reported make-up visit for this club, newest first —
+    the Secretary's alone to review, same as club documents."""
+    _require_secretary(member)
+    rows = (
+        db.query(models.ClubVisitReport)
+        .filter(models.ClubVisitReport.club_id == member.club_id)
+        .order_by(models.ClubVisitReport.created_at.desc())
+        .all()
+    )
+    return [
+        schemas.VisitReportOut(
+            id=row.id,
+            member_name=row.member.name,
+            member_role=row.member.role,
+            visited_club_name=row.visited_club_name,
+            meeting_date=row.meeting_date.isoformat(),
+            meeting_type=row.meeting_type,
+            notes=row.notes,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
 # ── club history / milestones ────────────────────────────────────────────
 
 @router.get("/milestones", response_model=list[schemas.MilestoneOut])

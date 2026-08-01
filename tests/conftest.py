@@ -131,6 +131,9 @@ def make_member(db, test_club):
         db.query(models.Apology).filter(models.Apology.member_id.in_(member_ids)).delete(
             synchronize_session=False
         )
+        db.query(models.ClubVisitReport).filter(
+            models.ClubVisitReport.member_id.in_(member_ids)
+        ).delete(synchronize_session=False)
         db.query(models.Transaction).filter(
             models.Transaction.created_by.in_(member_ids)
         ).delete(synchronize_session=False)

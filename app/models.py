@@ -453,6 +453,29 @@ class Apology(Base):
     member: Mapped["Member"] = relationship()
 
 
+class ClubVisitReport(Base):
+    """A member self-reports having attended a meeting at another club (no
+    QR to scan after the fact) so it counts as a make-up — shown to the
+    Secretary to review, same as the Apologies tab does for missed
+    meetings. Deliberately no district field: the Secretary only needs the
+    club name to look it up."""
+
+    __tablename__ = "club_visit_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    visited_club_name: Mapped[str] = mapped_column(String(160))
+    meeting_date: Mapped[date] = mapped_column(Date)
+    meeting_type: Mapped[str] = mapped_column(String(40), default="Club meeting")
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    member: Mapped["Member"] = relationship()
+
+
 class ClubDuesSetting(Base):
     """One row per club: the dues amount and period the Treasurer has
     configured. Absent until the Treasurer sets it for the first time."""
