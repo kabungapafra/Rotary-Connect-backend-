@@ -137,6 +137,18 @@ def set_club_status(club_id: int, payload: schemas.ClubStatusUpdate, db: Session
     return _to_out(club)
 
 
+@router.patch("/sms", response_model=list[schemas.ClubOut])
+def set_all_clubs_sms_enabled(payload: schemas.ClubSmsUpdate, db: Session = Depends(get_db)):
+    """Bulk on/off switch for every club's SMS at once — e.g. to pause all
+    outbound SMS platform-wide without suspending any club's overall
+    access. A single-segment path (/admin/clubs/sms), distinct from the
+    per-club /{club_id}/sms below."""
+    db.query(models.Club).update({"sms_enabled": payload.sms_enabled})
+    db.commit()
+    clubs = db.query(models.Club).order_by(models.Club.created_at.desc()).all()
+    return [_to_out(c) for c in clubs]
+
+
 @router.patch("/{club_id}/sms", response_model=schemas.ClubOut)
 def set_club_sms_enabled(
     club_id: int, payload: schemas.ClubSmsUpdate, db: Session = Depends(get_db)
