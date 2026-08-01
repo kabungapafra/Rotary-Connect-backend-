@@ -21,14 +21,21 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema.
 
-    Guarded: on a from-scratch database (CI, or a production deploy that
-    already booted once since this table was added to the model)
-    create_all() at app startup may already have built this table straight
-    off the model — nothing to create again there.
+    Guarded on clubs/members existing too, not just club_visit_reports
+    being absent: on a truly from-scratch database (CI's disposable
+    Postgres) NEITHER clubs nor members exist yet at this point in the
+    migration chain (the baseline migration is a deliberate no-op, and no
+    migration creates those tables outright) — the FK constraints below
+    would fail against tables that aren't there. create_all() at app
+    startup builds clubs, members, and club_visit_reports together in one
+    dependency-ordered pass on that fresh DB, so there's nothing for this
+    migration to do there. On production, clubs/members already exist
+    (predate this feature) and club_visit_reports doesn't — that's the
+    case this migration is actually for.
     """
     bind = op.get_bind()
     tables = sa.inspect(bind).get_table_names()
-    if 'club_visit_reports' not in tables:
+    if 'clubs' in tables and 'members' in tables and 'club_visit_reports' not in tables:
         op.create_table(
             'club_visit_reports',
             sa.Column('id', sa.Integer(), nullable=False),
