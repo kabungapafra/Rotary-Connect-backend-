@@ -302,7 +302,7 @@ def _send_event_reminder(event_id: int) -> None:
         if event.meta.strip():
             text += f" — {event.meta.strip()}"
         text += f" starts in {_REMINDER_LEAD_HOURS} hours. See you there! — {club.name}"
-        send_bulk_sms(phones, text, club_id=event.club_id)
+        send_bulk_sms(phones, text, club_id=event.club_id, sms_type="event_reminder")
         send_bulk_push(
             tokens_for_club(db, event.club_id),
             f"📅 {event.name}",
@@ -369,7 +369,9 @@ def _send_event_thank_you(event_id: int) -> None:
         )
         message = _THANK_YOU_MESSAGES[meetings_held % len(_THANK_YOU_MESSAGES)]
         phones = [c.member.phone for c in checkins if c.member.phone]
-        send_bulk_sms(phones, f"🙏 {message} — {club.name}", club_id=event.club_id)
+        send_bulk_sms(
+            phones, f"🙏 {message} — {club.name}", club_id=event.club_id, sms_type="event_thank_you"
+        )
         tokens = [
             row.token
             for row in db.query(models.DeviceToken).filter(

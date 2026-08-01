@@ -74,6 +74,18 @@ class Club(Base):
     # checked by send_sms/send_bulk_sms before every send, on top of the
     # deployment-wide YOOLA_API_KEY gate.
     sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Per-message-type overrides — checked in addition to sms_enabled above,
+    # so a club can keep SMS on overall but drop just one kind of message
+    # (e.g. no birthday texts). See sms.SMS_TYPE_COLUMNS for the mapping
+    # each send site's `sms_type` argument resolves to.
+    sms_birthday_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_guest_thank_you_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_event_reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_event_thank_you_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_new_member_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_new_president_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_admin_pin_reset_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_self_service_pin_reset_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # "rotary" | "rotaract" — drives club-facing app branding (wordmark text,
     # accent color, wheel logo tint).
     club_type: Mapped[str] = mapped_column(String(20), default="rotary")

@@ -99,6 +99,7 @@ def create_member(
         f"Member No. {new_member.member_number}, PIN {pin}. "
         f"Download the app and sign in to get started.",
         club_id=club.id,
+        sms_type="new_member",
     )
     return schemas.ClubMemberCreateResponse(member=new_member, pin=pin)
 
@@ -128,6 +129,7 @@ def reset_password(member_id: int, background_tasks: BackgroundTasks, db: Sessio
         f"Your Rotary Connect PIN has been reset. Member No. {member.member_number}, "
         f"new PIN {new_pin}. Sign in with these to continue.",
         club_id=member.club_id,
+        sms_type="admin_pin_reset",
     )
     return schemas.ResetPasswordResponse(member_name=member.name, new_pin=new_pin)
 

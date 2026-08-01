@@ -169,5 +169,6 @@ def forgot_pin(
         f"Your Rotary Connect PIN has been reset. Member No. {member.member_number}, "
         f"new PIN {new_pin}. Sign in with these to continue.",
         club_id=member.club_id,
+        sms_type="self_service_pin_reset",
     )
     return generic_response

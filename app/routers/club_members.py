@@ -100,6 +100,7 @@ def add_member(
         f"Member No. {new_member.member_number}, PIN {pin}. "
         f"Download the app and sign in to get started.",
         club_id=member.club_id,
+        sms_type="new_member",
     )
     return schemas.ClubMemberCreateResponse(member=new_member, pin=pin)
 

@@ -49,6 +49,7 @@ def wish_if_due(db: Session, member: models.Member, today: date | None = None) -
         f"Happy birthday, {member.name.split()[0]}! 🎉 Wishing you a wonderful year "
         f"ahead from all of us at {member.club.name}.",
         club_id=member.club_id,
+        sms_type="birthday",
     )
     if sent:
         member.last_birthday_wished = today

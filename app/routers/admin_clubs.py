@@ -38,6 +38,14 @@ def _to_out(club: models.Club) -> schemas.ClubOut:
         logo=club.logo,
         charter_date=format_display_date(club.charter_date),
         sms_enabled=club.sms_enabled,
+        sms_birthday_enabled=club.sms_birthday_enabled,
+        sms_guest_thank_you_enabled=club.sms_guest_thank_you_enabled,
+        sms_event_reminder_enabled=club.sms_event_reminder_enabled,
+        sms_event_thank_you_enabled=club.sms_event_thank_you_enabled,
+        sms_new_member_enabled=club.sms_new_member_enabled,
+        sms_new_president_enabled=club.sms_new_president_enabled,
+        sms_admin_pin_reset_enabled=club.sms_admin_pin_reset_enabled,
+        sms_self_service_pin_reset_enabled=club.sms_self_service_pin_reset_enabled,
     )
 
 
@@ -119,6 +127,7 @@ def create_club(
             f"Your login: Member No. {president.member_number} or your phone number, PIN {pin}. "
             f"Download the app and sign in to get started.",
             club_id=club.id,
+            sms_type="new_president",
         )
 
     db.commit()
@@ -158,6 +167,27 @@ def set_club_sms_enabled(
     off (e.g. hasn't paid for SMS credits)."""
     club = _get_or_404(db, club_id)
     club.sms_enabled = payload.sms_enabled
+    db.commit()
+    db.refresh(club)
+    return _to_out(club)
+
+
+@router.patch("/{club_id}/sms-types", response_model=schemas.ClubOut)
+def set_club_sms_types(
+    club_id: int, payload: schemas.ClubSmsTypesUpdate, db: Session = Depends(get_db)
+):
+    """Per-message-type overrides for one club — e.g. keep event reminders
+    on but drop birthday texts. Checked in addition to sms_enabled above,
+    which still gates SMS for the club overall."""
+    club = _get_or_404(db, club_id)
+    club.sms_birthday_enabled = payload.sms_birthday_enabled
+    club.sms_guest_thank_you_enabled = payload.sms_guest_thank_you_enabled
+    club.sms_event_reminder_enabled = payload.sms_event_reminder_enabled
+    club.sms_event_thank_you_enabled = payload.sms_event_thank_you_enabled
+    club.sms_new_member_enabled = payload.sms_new_member_enabled
+    club.sms_new_president_enabled = payload.sms_new_president_enabled
+    club.sms_admin_pin_reset_enabled = payload.sms_admin_pin_reset_enabled
+    club.sms_self_service_pin_reset_enabled = payload.sms_self_service_pin_reset_enabled
     db.commit()
     db.refresh(club)
     return _to_out(club)

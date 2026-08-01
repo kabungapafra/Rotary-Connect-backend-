@@ -135,3 +135,72 @@ def test_send_sms_without_a_club_id_is_unaffected_by_any_clubs_setting(
 
     sent = send_sms("0772000000", "hello")
     assert sent is True
+
+
+def _sms_types_payload(**overrides):
+    payload = {
+        "sms_birthday_enabled": True,
+        "sms_guest_thank_you_enabled": True,
+        "sms_event_reminder_enabled": True,
+        "sms_event_thank_you_enabled": True,
+        "sms_new_member_enabled": True,
+        "sms_new_president_enabled": True,
+        "sms_admin_pin_reset_enabled": True,
+        "sms_self_service_pin_reset_enabled": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_club_sms_types_default_enabled(client, db, test_club):
+    res = client.get("/admin/clubs", headers=_admin_auth(db))
+    row = next(c for c in res.json() if c["id"] == test_club.id)
+    for key in _sms_types_payload():
+        assert row[key] is True
+
+
+def test_admin_can_set_one_message_type_off_while_others_stay_on(client, db, test_club):
+    payload = _sms_types_payload(sms_birthday_enabled=False)
+    res = client.patch(
+        f"/admin/clubs/{test_club.id}/sms-types", json=payload, headers=_admin_auth(db)
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["sms_birthday_enabled"] is False
+    for key in payload:
+        if key != "sms_birthday_enabled":
+            assert body[key] is True
+
+    db.refresh(test_club)
+    assert test_club.sms_birthday_enabled is False
+    assert test_club.sms_event_reminder_enabled is True
+
+
+def test_sms_types_endpoint_requires_admin_auth(client, test_club):
+    res = client.patch(
+        f"/admin/clubs/{test_club.id}/sms-types", json=_sms_types_payload()
+    )
+    assert res.status_code == 401
+
+
+def test_send_sms_skips_one_disabled_message_type_but_not_others(db, test_club, monkeypatch):
+    """The exact scenario the feature is for: a club keeps SMS on overall
+    and keeps event reminders, but drops birthday texts specifically."""
+    test_club.sms_birthday_enabled = False
+    db.commit()
+    monkeypatch.setattr(config, "SMS_ENABLED", True)
+
+    class _FakeResponse:
+        status_code = 200
+        text = "ok"
+
+    monkeypatch.setattr("app.sms.requests.post", lambda *a, **k: _FakeResponse())
+
+    assert send_sms(
+        "0772000000", "happy birthday", club_id=test_club.id, sms_type="birthday"
+    ) is False
+    assert send_sms(
+        "0772000000", "see you soon", club_id=test_club.id, sms_type="event_reminder"
+    ) is True
+    # No sms_type at all: only the overall sms_enabled gate applies.
+    assert send_sms("0772000000", "generic", club_id=test_club.id) is True

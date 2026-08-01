@@ -148,6 +148,14 @@ class ClubOut(BaseModel):
     logo: str | None = None
     charter_date: str | None = None
     sms_enabled: bool = True
+    sms_birthday_enabled: bool = True
+    sms_guest_thank_you_enabled: bool = True
+    sms_event_reminder_enabled: bool = True
+    sms_event_thank_you_enabled: bool = True
+    sms_new_member_enabled: bool = True
+    sms_new_president_enabled: bool = True
+    sms_admin_pin_reset_enabled: bool = True
+    sms_self_service_pin_reset_enabled: bool = True
 
 
 class ClubCreate(BaseModel):
@@ -188,6 +196,17 @@ class ClubStatusUpdate(BaseModel):
 
 class ClubSmsUpdate(BaseModel):
     sms_enabled: bool
+
+
+class ClubSmsTypesUpdate(BaseModel):
+    sms_birthday_enabled: bool
+    sms_guest_thank_you_enabled: bool
+    sms_event_reminder_enabled: bool
+    sms_event_thank_you_enabled: bool
+    sms_new_member_enabled: bool
+    sms_new_president_enabled: bool
+    sms_admin_pin_reset_enabled: bool
+    sms_self_service_pin_reset_enabled: bool
 
 
 class ClubCharterDateUpdate(BaseModel):

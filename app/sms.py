@@ -17,6 +17,21 @@ logger = logging.getLogger("rotary.sms")
 
 _MAX_MESSAGE_LENGTH = 480  # a handful of SMS segments; also caps abuse cost
 
+# Every distinct kind of message the app sends, mapped to the Club column
+# that gates it — each is on by default (see the model) so nothing changes
+# until a club's SMS preferences are edited. Keys are what call sites pass
+# as `sms_type`; also the admin dashboard's per-club SMS-types form fields.
+SMS_TYPE_COLUMNS: dict[str, str] = {
+    "birthday": "sms_birthday_enabled",
+    "guest_thank_you": "sms_guest_thank_you_enabled",
+    "event_reminder": "sms_event_reminder_enabled",
+    "event_thank_you": "sms_event_thank_you_enabled",
+    "new_member": "sms_new_member_enabled",
+    "new_president": "sms_new_president_enabled",
+    "admin_pin_reset": "sms_admin_pin_reset_enabled",
+    "self_service_pin_reset": "sms_self_service_pin_reset_enabled",
+}
+
 
 def _log_attempt(phone: str, status: str) -> None:
     """Record one send attempt so the admin dashboard's SMS view can show
@@ -48,24 +63,35 @@ def normalize_ugandan_phone(raw: str) -> str | None:
     return digits
 
 
-def _club_sms_enabled(club_id: int) -> bool:
+def _club_sms_allows(club_id: int, sms_type: str | None) -> bool:
     db = SessionLocal()
     try:
         club = db.get(models.Club, club_id)
-        return club is not None and club.sms_enabled
+        if club is None or not club.sms_enabled:
+            return False
+        if sms_type is None:
+            return True
+        column = SMS_TYPE_COLUMNS.get(sms_type)
+        return column is None or getattr(club, column)
     finally:
         db.close()
 
 
-def send_sms(phone: str, message: str, club_id: int | None = None) -> bool:
+def send_sms(
+    phone: str, message: str, club_id: int | None = None, sms_type: str | None = None
+) -> bool:
     """Send one SMS. Returns whether it was actually sent (False if SMS
     isn't configured, the phone is invalid, the request failed, or — when
-    `club_id` is given — that specific club has had its SMS withheld)."""
+    `club_id` is given — that club has withheld SMS overall or, when
+    `sms_type` is also given, that specific message type)."""
     if not config.SMS_ENABLED:
         logger.info("SMS disabled (no YOOLA_API_KEY) — skipped message to %s", phone)
         return False
-    if club_id is not None and not _club_sms_enabled(club_id):
-        logger.info("SMS disabled for club %s — skipped message to %s", club_id, phone)
+    if club_id is not None and not _club_sms_allows(club_id, sms_type):
+        logger.info(
+            "SMS disabled for club %s (type=%s) — skipped message to %s",
+            club_id, sms_type, phone,
+        )
         return False
 
     number = normalize_ugandan_phone(phone)
@@ -97,9 +123,11 @@ def send_sms(phone: str, message: str, club_id: int | None = None) -> bool:
         return False
 
 
-def send_bulk_sms(phones: list[str], message: str, club_id: int | None = None) -> None:
+def send_bulk_sms(
+    phones: list[str], message: str, club_id: int | None = None, sms_type: str | None = None
+) -> None:
     """Send the same message to several numbers, one at a time. Used for
     club-wide announcements (new fellowship events); a bad number in the
     list must not stop the rest from going out."""
     for phone in phones:
-        send_sms(phone, message, club_id=club_id)
+        send_sms(phone, message, club_id=club_id, sms_type=sms_type)
