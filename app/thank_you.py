@@ -33,6 +33,7 @@ def send_pending_thank_yous(db: Session) -> int:
             visit.phone,
             f"Thank you for visiting {club.name} today, {visit.name.split()[0]}! "
             f"We hope to welcome you again soon. — {club.name}",
+            club_id=visit.club_id,
         )
         if sent:
             visit.thanked_at = datetime.now(timezone.utc)

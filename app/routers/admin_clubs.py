@@ -37,6 +37,7 @@ def _to_out(club: models.Club) -> schemas.ClubOut:
         joined=club.created_at.strftime("%d %b %Y"),
         logo=club.logo,
         charter_date=format_display_date(club.charter_date),
+        sms_enabled=club.sms_enabled,
     )
 
 
@@ -117,6 +118,7 @@ def create_club(
             f"Welcome aboard Rotary Connect, President - {club.name}. "
             f"Your login: Member No. {president.member_number} or your phone number, PIN {pin}. "
             f"Download the app and sign in to get started.",
+            club_id=club.id,
         )
 
     db.commit()
@@ -130,6 +132,20 @@ def set_club_status(club_id: int, payload: schemas.ClubStatusUpdate, db: Session
     if payload.status not in ("active", "suspended"):
         raise HTTPException(status_code=422, detail="status must be 'active' or 'suspended'")
     club.status = payload.status
+    db.commit()
+    db.refresh(club)
+    return _to_out(club)
+
+
+@router.patch("/{club_id}/sms", response_model=schemas.ClubOut)
+def set_club_sms_enabled(
+    club_id: int, payload: schemas.ClubSmsUpdate, db: Session = Depends(get_db)
+):
+    """Withhold (or restore) SMS for one club specifically — independent
+    of `status`, so a club stays otherwise fully active while its SMS is
+    off (e.g. hasn't paid for SMS credits)."""
+    club = _get_or_404(db, club_id)
+    club.sms_enabled = payload.sms_enabled
     db.commit()
     db.refresh(club)
     return _to_out(club)

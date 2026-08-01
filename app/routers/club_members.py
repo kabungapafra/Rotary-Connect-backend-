@@ -99,6 +99,7 @@ def add_member(
         f"Welcome to {member.club.name}! Your Rotary Connect login: "
         f"Member No. {new_member.member_number}, PIN {pin}. "
         f"Download the app and sign in to get started.",
+        club_id=member.club_id,
     )
     return schemas.ClubMemberCreateResponse(member=new_member, pin=pin)
 

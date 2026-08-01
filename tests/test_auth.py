@@ -84,7 +84,10 @@ def test_successful_login_clears_the_failure_counter(client, make_member):
 
 def _capture_sms(monkeypatch):
     calls = []
-    monkeypatch.setattr(auth, "send_sms", lambda phone, message: calls.append((phone, message)))
+    monkeypatch.setattr(
+        auth, "send_sms",
+        lambda phone, message, **kwargs: calls.append((phone, message)),
+    )
     return calls
 
 

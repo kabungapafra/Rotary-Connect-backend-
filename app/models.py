@@ -69,6 +69,11 @@ class Club(Base):
     charter_president: Mapped[str] = mapped_column(String(160), default="")
     charter_sponsor_club: Mapped[str] = mapped_column(String(160), default="")
     status: Mapped[str] = mapped_column(String(20), default="active")  # active | suspended
+    # Separate from `status`: a club can be otherwise fully active but have
+    # its SMS specifically withheld (e.g. hasn't paid for SMS credits) —
+    # checked by send_sms/send_bulk_sms before every send, on top of the
+    # deployment-wide YOOLA_API_KEY gate.
+    sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # "rotary" | "rotaract" — drives club-facing app branding (wordmark text,
     # accent color, wheel logo tint).
     club_type: Mapped[str] = mapped_column(String(20), default="rotary")

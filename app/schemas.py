@@ -147,6 +147,7 @@ class ClubOut(BaseModel):
     joined: str
     logo: str | None = None
     charter_date: str | None = None
+    sms_enabled: bool = True
 
 
 class ClubCreate(BaseModel):
@@ -183,6 +184,10 @@ class ClubCreateResponse(BaseModel):
 
 class ClubStatusUpdate(BaseModel):
     status: str  # active | suspended
+
+
+class ClubSmsUpdate(BaseModel):
+    sms_enabled: bool
 
 
 class ClubCharterDateUpdate(BaseModel):

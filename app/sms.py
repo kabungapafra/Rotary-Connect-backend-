@@ -48,11 +48,24 @@ def normalize_ugandan_phone(raw: str) -> str | None:
     return digits
 
 
-def send_sms(phone: str, message: str) -> bool:
+def _club_sms_enabled(club_id: int) -> bool:
+    db = SessionLocal()
+    try:
+        club = db.get(models.Club, club_id)
+        return club is not None and club.sms_enabled
+    finally:
+        db.close()
+
+
+def send_sms(phone: str, message: str, club_id: int | None = None) -> bool:
     """Send one SMS. Returns whether it was actually sent (False if SMS
-    isn't configured, the phone is invalid, or the request failed)."""
+    isn't configured, the phone is invalid, the request failed, or — when
+    `club_id` is given — that specific club has had its SMS withheld)."""
     if not config.SMS_ENABLED:
         logger.info("SMS disabled (no YOOLA_API_KEY) — skipped message to %s", phone)
+        return False
+    if club_id is not None and not _club_sms_enabled(club_id):
+        logger.info("SMS disabled for club %s — skipped message to %s", club_id, phone)
         return False
 
     number = normalize_ugandan_phone(phone)
@@ -84,9 +97,9 @@ def send_sms(phone: str, message: str) -> bool:
         return False
 
 
-def send_bulk_sms(phones: list[str], message: str) -> None:
+def send_bulk_sms(phones: list[str], message: str, club_id: int | None = None) -> None:
     """Send the same message to several numbers, one at a time. Used for
     club-wide announcements (new fellowship events); a bad number in the
     list must not stop the rest from going out."""
     for phone in phones:
-        send_sms(phone, message)
+        send_sms(phone, message, club_id=club_id)
