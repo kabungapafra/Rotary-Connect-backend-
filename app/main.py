@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from jose import jwt
 from sqlalchemy import text
 
 from . import config, models
@@ -33,7 +34,11 @@ from .routers import (
 )
 from .scheduler import scheduler
 from .seed import seed_bootstrap_data
-from .storage import backfill_gallery_thumbs, migrate_legacy_photos
+from .storage import (
+    backfill_gallery_thumbs,
+    backfill_object_sizes,
+    migrate_legacy_photos,
+)
 from .thank_you import send_pending_thank_yous
 
 logger = logging.getLogger("rotary.main")
@@ -110,7 +115,30 @@ async def record_slow_requests(request: Request, call_next):
     return response
 
 
-def _record_error(method: str, path: str, exc: Exception) -> None:
+def _club_id_from_request(db, request: Request) -> int | None:
+    """Which club the failing caller belongs to, for the per-club error list
+    on the club management screen. Decoded from the member token rather than
+    the path, since most club-scoped routes take no club_id (the server
+    derives it from the caller). Returns None for admin and anonymous
+    requests — those belong to no single club — and never raises: this runs
+    inside error handling, where a second failure would lose the log entry."""
+    try:
+        header = request.headers.get("authorization") or ""
+        scheme, _, token = header.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            return None
+        payload = jwt.decode(
+            token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM]
+        )
+        if payload.get("role") == "admin":
+            return None
+        member = db.get(models.Member, int(payload["sub"]))
+        return member.club_id if member else None
+    except Exception:
+        return None
+
+
+def _record_error(method: str, path: str, exc: Exception, request: Request) -> None:
     """Persists to Postgres (not just journald) so an unhandled error is
     visible from the admin dashboard even with no Sentry/Crashlytics-style
     account configured. A fresh session, not the failed request's own —
@@ -126,6 +154,7 @@ def _record_error(method: str, path: str, exc: Exception) -> None:
                 traceback="".join(
                     traceback_module.format_exception(type(exc), exc, exc.__traceback__)
                 )[:10000],
+                club_id=_club_id_from_request(db, request),
             )
         )
         db.commit()
@@ -143,7 +172,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     # isn't just a client-side mystery) and returns the same JSON shape as
     # every other error response in this API.
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
-    _record_error(request.method, request.url.path, exc)
+    _record_error(request.method, request.url.path, exc, request)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
@@ -354,6 +383,7 @@ def on_startup() -> None:
     with SessionLocal() as db:
         migrate_legacy_photos(db)
         backfill_gallery_thumbs(db)
+        backfill_object_sizes(db)
 
     # Exactly ONE worker process may run the scheduler. uvicorn runs this
     # startup hook once per worker; before this lock existed every worker

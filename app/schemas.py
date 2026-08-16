@@ -247,6 +247,37 @@ class ClubStatsOut(BaseModel):
     attendance_percent: int
 
 
+class ClubUsageOut(BaseModel):
+    """Resource usage for one club, for the club management screen.
+
+    sms_sent/sms_failed count only sends made after SmsLog gained a
+    club_id, and errors_total likewise — earlier rows carry no club and
+    are unattributable, so these are "since tracking began", not
+    all-time. storage_bytes has no such gap: it was backfilled from R2.
+    """
+
+    members_total: int
+    members_active: int
+    members_suspended: int
+    sms_sent: int
+    sms_failed: int
+    storage_bytes: int
+    storage_photos: int
+    storage_documents: int
+    errors_total: int
+
+
+class ClubOverviewOut(BaseModel):
+    """Everything the club management screen renders in one round trip —
+    the screen opens on a click, so a single call keeps it from flashing
+    through several independent loading states."""
+
+    club: ClubOut
+    attendance_percent: int
+    usage: ClubUsageOut
+    recent_errors: list["ErrorLogOut"]
+
+
 class AdminMemberOut(BaseModel):
     id: int
     name: str

@@ -318,6 +318,13 @@ class ErrorLog(Base):
     exception_type: Mapped[str] = mapped_column(String(120))
     message: Mapped[str] = mapped_column(Text)
     traceback: Mapped[str] = mapped_column(Text)
+    # Resolved from the caller's member token when there is one, so the
+    # per-club screen can show the errors that club actually hit. Null for
+    # unauthenticated and admin-side requests, which belong to no single
+    # club, and for rows written before this column existed.
+    club_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clubs.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
@@ -372,6 +379,14 @@ class SmsLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     phone: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20))  # sent | failed
+    # Which club's activity triggered this send, so the per-club screen can
+    # show real usage. Nullable because send_sms() is also called without a
+    # club (admin-initiated sends), and because rows written before this
+    # column existed can't be attributed retroactively — the club was never
+    # recorded. Per-club totals therefore count from this column's rollout.
+    club_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clubs.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
@@ -418,6 +433,11 @@ class GalleryPhoto(Base):
     # R2 object key, needed to delete the file from the bucket. Null only
     # for legacy base64 rows not yet migrated.
     storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Bytes actually stored in R2 (shrunk original + thumbnail), not the
+    # bytes the client uploaded — originals are recompressed to WebP first,
+    # so the upload size would overstate storage by ~10x. Null until the
+    # startup backfill reads it back from R2 (see storage.backfill_object_sizes).
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
@@ -439,6 +459,9 @@ class ClubDocument(Base):
     title: Mapped[str] = mapped_column(String(200))
     url: Mapped[str] = mapped_column(Text)
     storage_key: Mapped[str] = mapped_column(Text)
+    # Bytes stored in R2. PDFs are uploaded as-is, so this is the decoded
+    # payload size. Null until the startup backfill fills it in.
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("members.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

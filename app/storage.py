@@ -68,17 +68,18 @@ def _make_thumb(raw: bytes) -> bytes | None:
         return None
 
 
-def _upload_thumb(raw: bytes, key: str) -> str | None:
+def _upload_thumb(raw: bytes, key: str) -> tuple[str | None, int]:
     """Generate and upload the thumbnail for the photo stored at `key`;
-    returns its public URL, or None when thumbnailing failed."""
+    returns (public URL, bytes stored). The URL is None and the size 0 when
+    thumbnailing failed — the photo itself is still kept."""
     thumb = _make_thumb(raw)
     if thumb is None:
-        return None
+        return None, 0
     tkey = _thumb_key(key)
     _client.put_object(
         Bucket=config.R2_BUCKET_NAME, Key=tkey, Body=thumb, ContentType="image/webp"
     )
-    return f"{config.R2_PUBLIC_URL}/{tkey}"
+    return f"{config.R2_PUBLIC_URL}/{tkey}", len(thumb)
 
 
 # Originals are display assets, not archives: phone cameras produce 3-12MB
@@ -110,9 +111,11 @@ def _shrink_original(raw: bytes, content_type: str, ext: str) -> tuple[bytes, st
         raise ValueError("File is not a valid image") from None
 
 
-def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -> tuple[str, str]:
+def upload_gallery_image(
+    data_url: str, club_id: int, prefix: str = "gallery"
+) -> tuple[str, str, int]:
     """Decode a "data:image/...;base64,..." URL, shrink it, upload it to
-    R2, and return (public_url, storage_key). Raises RuntimeError if R2
+    R2, and return (public_url, storage_key, bytes_stored). Raises RuntimeError if R2
     isn't configured — callers should treat that as a hard failure, not
     silently drop the photo. `prefix` namespaces the object key by use
     (gallery photos vs. event banners share this same bucket)."""
@@ -124,21 +127,26 @@ def upload_gallery_image(data_url: str, club_id: int, prefix: str = "gallery") -
     _client.put_object(
         Bucket=config.R2_BUCKET_NAME, Key=key, Body=raw, ContentType=content_type
     )
-    return f"{config.R2_PUBLIC_URL}/{key}", key
+    return f"{config.R2_PUBLIC_URL}/{key}", key, len(raw)
 
 
-def upload_gallery_photo(data_url: str, club_id: int) -> tuple[str, str, str | None]:
+def upload_gallery_photo(
+    data_url: str, club_id: int
+) -> tuple[str, str, str | None, int]:
     """Gallery photos get a thumbnail alongside the original: returns
-    (public_url, storage_key, thumb_url). thumb_url is None when the
-    thumbnail couldn't be generated — the photo is still kept."""
-    url, key = upload_gallery_image(data_url, club_id)
+    (public_url, storage_key, thumb_url, bytes_stored). thumb_url is None
+    when the thumbnail couldn't be generated — the photo is still kept.
+    bytes_stored counts the original and the thumbnail together, since both
+    occupy the bucket and both are deleted with the photo."""
+    url, key, original_bytes = upload_gallery_image(data_url, club_id)
     raw, _, _ = _decode_data_url(data_url)
-    return url, key, _upload_thumb(raw, key)
+    thumb_url, thumb_bytes = _upload_thumb(raw, key)
+    return url, key, thumb_url, original_bytes + thumb_bytes
 
 
-def upload_club_document(data_url: str, club_id: int) -> tuple[str, str]:
+def upload_club_document(data_url: str, club_id: int) -> tuple[str, str, int]:
     """Decode a "data:application/pdf;base64,..." URL, upload it to R2,
-    and return (public_url, storage_key). Only PDFs are accepted — the
+    and return (public_url, storage_key, bytes_stored). Only PDFs are accepted — the
     documents section is for important club paperwork, and one predictable
     format keeps viewing simple on every device."""
     if _client is None:
@@ -150,7 +158,7 @@ def upload_club_document(data_url: str, club_id: int) -> tuple[str, str]:
     _client.put_object(
         Bucket=config.R2_BUCKET_NAME, Key=key, Body=raw, ContentType=content_type
     )
-    return f"{config.R2_PUBLIC_URL}/{key}", key
+    return f"{config.R2_PUBLIC_URL}/{key}", key, len(raw)
 
 
 def store_club_logo(logo: str | None, club_id: int) -> tuple[str | None, str | None]:
@@ -160,7 +168,8 @@ def store_club_logo(logo: str | None, club_id: int) -> tuple[str | None, str | N
     URL, or nothing) passes through untouched."""
     if not logo or not logo.startswith("data:") or _client is None:
         return logo, None
-    return upload_gallery_image(logo, club_id, prefix="logos")
+    url, key, _ = upload_gallery_image(logo, club_id, prefix="logos")
+    return url, key
 
 
 def delete_gallery_image(storage_key: str) -> None:
@@ -196,12 +205,13 @@ def migrate_legacy_photos(db: Session) -> int:
     count = 0
     for photo in legacy:
         try:
-            url, key = upload_gallery_image(photo.image, photo.club_id)
+            url, key, size = upload_gallery_image(photo.image, photo.club_id)
         except Exception:
             logger.exception("Failed to migrate gallery photo %d to R2", photo.id)
             continue
         photo.image = url
         photo.storage_key = key
+        photo.size_bytes = size
         db.commit()
         count += 1
     legacy_logos = (
@@ -212,7 +222,7 @@ def migrate_legacy_photos(db: Session) -> int:
     )
     for club in legacy_logos:
         try:
-            url, key = upload_gallery_image(club.logo, club.id, prefix="logos")
+            url, key, _ = upload_gallery_image(club.logo, club.id, prefix="logos")
         except Exception:
             logger.exception("Failed to migrate club %d logo to R2", club.id)
             continue
@@ -244,7 +254,7 @@ def backfill_gallery_thumbs(db: Session) -> int:
             obj = _client.get_object(
                 Bucket=config.R2_BUCKET_NAME, Key=photo.storage_key
             )
-            thumb_url = _upload_thumb(obj["Body"].read(), photo.storage_key)
+            thumb_url, _ = _upload_thumb(obj["Body"].read(), photo.storage_key)
         except Exception:
             logger.exception(
                 "Failed to backfill thumbnail for gallery photo %d", photo.id
@@ -257,4 +267,60 @@ def backfill_gallery_thumbs(db: Session) -> int:
         count += 1
     if count:
         logger.info("Backfilled %d gallery thumbnail(s)", count)
+    return count
+
+
+def _object_size(key: str | None) -> int:
+    """Bytes an R2 object occupies, or 0 if it's missing or unreadable.
+    HEAD rather than GET — the backfill only needs the length, and pulling
+    whole photos back over the wire to measure them would be wasteful."""
+    if _client is None or not key:
+        return 0
+    try:
+        return int(
+            _client.head_object(Bucket=config.R2_BUCKET_NAME, Key=key)["ContentLength"]
+        )
+    except Exception:
+        return 0
+
+
+def backfill_object_sizes(db: Session) -> int:
+    """One-time upgrade path, same spirit as backfill_gallery_thumbs: rows
+    written before size_bytes existed don't know how much space they use,
+    which would make the per-club storage figure read near-zero until the
+    whole library happened to be re-uploaded. Ask R2 for each object's size
+    once and record it. Safe to run on every startup — rows with a size are
+    skipped, so it's a no-op after the first pass.
+
+    A photo's size counts its thumbnail too, matching what upload records
+    and what deleting the photo actually frees."""
+    if _client is None:
+        return 0
+    count = 0
+    photos = (
+        db.query(models.GalleryPhoto)
+        .filter(models.GalleryPhoto.size_bytes.is_(None))
+        .filter(models.GalleryPhoto.storage_key.isnot(None))
+        .all()
+    )
+    for photo in photos:
+        size = _object_size(photo.storage_key)
+        if photo.thumb:
+            size += _object_size(_thumb_key(photo.storage_key))
+        # A missing object measures 0; store it anyway so the row stops
+        # being rescanned on every startup for a file that will never exist.
+        photo.size_bytes = size
+        db.commit()
+        count += 1
+    documents = (
+        db.query(models.ClubDocument)
+        .filter(models.ClubDocument.size_bytes.is_(None))
+        .all()
+    )
+    for doc in documents:
+        doc.size_bytes = _object_size(doc.storage_key)
+        db.commit()
+        count += 1
+    if count:
+        logger.info("Backfilled size for %d stored object(s)", count)
     return count

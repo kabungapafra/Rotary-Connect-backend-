@@ -33,13 +33,15 @@ SMS_TYPE_COLUMNS: dict[str, str] = {
 }
 
 
-def _log_attempt(phone: str, status: str) -> None:
+def _log_attempt(phone: str, status: str, club_id: int | None = None) -> None:
     """Record one send attempt so the admin dashboard's SMS view can show
     real numbers instead of guessing. Best-effort like everything else here
-    — a logging failure must never be the reason an SMS call raises."""
+    — a logging failure must never be the reason an SMS call raises.
+    `club_id` attributes the send to a club for the per-club usage figure;
+    it stays None for sends made outside any club context."""
     db = SessionLocal()
     try:
-        db.add(models.SmsLog(phone=phone, status=status))
+        db.add(models.SmsLog(phone=phone, status=status, club_id=club_id))
         db.commit()
     except Exception:
         logger.exception("Failed to record SMS log entry")
@@ -113,13 +115,13 @@ def send_sms(
             logger.error(
                 "Yoola SMS to %s failed: %s %s", number, response.status_code, response.text[:300]
             )
-            _log_attempt(number, "failed")
+            _log_attempt(number, "failed", club_id)
             return False
-        _log_attempt(number, "sent")
+        _log_attempt(number, "sent", club_id)
         return True
     except requests.RequestException as exc:
         logger.error("Yoola SMS to %s raised %s", number, exc)
-        _log_attempt(number, "failed")
+        _log_attempt(number, "failed", club_id)
         return False
 
 

@@ -213,7 +213,7 @@ def upload_document(
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="Title is required")
     try:
-        url, key = upload_club_document(payload.file, member.club_id)
+        url, key, size = upload_club_document(payload.file, member.club_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     doc = models.ClubDocument(
@@ -221,6 +221,7 @@ def upload_document(
         title=payload.title.strip(),
         url=url,
         storage_key=key,
+        size_bytes=size,
         created_by=member.id,
     )
     db.add(doc)

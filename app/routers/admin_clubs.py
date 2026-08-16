@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas, security
@@ -306,11 +307,113 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     db.query(models.Project).filter(models.Project.club_id == club_id).delete(
         synchronize_session=False
     )
+    # sms_logs and error_logs also FK into clubs, but they are logs: the
+    # global SMS totals and the error history should outlive the club they
+    # happened to come from (same reasoning as MemberEvent being FK-free).
+    # Clearing the attribution rather than the row satisfies the FK without
+    # silently shrinking those totals when a club is removed.
+    db.query(models.SmsLog).filter(models.SmsLog.club_id == club_id).update(
+        {models.SmsLog.club_id: None}, synchronize_session=False
+    )
+    db.query(models.ErrorLog).filter(models.ErrorLog.club_id == club_id).update(
+        {models.ErrorLog.club_id: None}, synchronize_session=False
+    )
     if club.logo_storage_key:
         delete_gallery_image(club.logo_storage_key)
     db.delete(club)
     db.commit()
     return {"deleted": True}
+
+
+def _attendance_percent(db: Session, club_id: int, total_members: int) -> int:
+    """Share of the club that checked in at its most recent meeting."""
+    latest_meeting = (
+        db.query(models.Meeting)
+        .filter(models.Meeting.club_id == club_id)
+        .order_by(models.Meeting.date.desc())
+        .first()
+    )
+    if not latest_meeting or not total_members:
+        return 0
+    checked_in = (
+        db.query(models.CheckIn)
+        .filter(models.CheckIn.meeting_id == latest_meeting.id)
+        .count()
+    )
+    return round(checked_in / total_members * 100)
+
+
+# How many of a club's most recent errors the management screen lists. The
+# screen shows a scannable "what's been breaking" panel, not a log viewer.
+_RECENT_ERROR_LIMIT = 20
+
+
+@router.get("/{club_id}/overview", response_model=schemas.ClubOverviewOut)
+def club_overview(club_id: int, db: Session = Depends(get_db)):
+    """Everything the club management screen needs, in one round trip."""
+    club = _get_or_404(db, club_id)
+
+    member_rows = (
+        db.query(models.Member.status)
+        .filter(models.Member.club_id == club_id)
+        .all()
+    )
+    members_total = len(member_rows)
+    members_active = sum(1 for (s,) in member_rows if s == "active")
+    members_suspended = sum(1 for (s,) in member_rows if s == "suspended")
+
+    sms_rows = (
+        db.query(models.SmsLog.status)
+        .filter(models.SmsLog.club_id == club_id)
+        .all()
+    )
+    sms_sent = sum(1 for (s,) in sms_rows if s == "sent")
+    sms_failed = sum(1 for (s,) in sms_rows if s == "failed")
+
+    # coalesce so a club with no uploads reports 0 rather than None, and so
+    # rows the R2 backfill couldn't measure don't null out the whole sum.
+    photo_bytes, photo_count = (
+        db.query(
+            func.coalesce(func.sum(models.GalleryPhoto.size_bytes), 0),
+            func.count(models.GalleryPhoto.id),
+        )
+        .filter(models.GalleryPhoto.club_id == club_id)
+        .one()
+    )
+    doc_bytes, doc_count = (
+        db.query(
+            func.coalesce(func.sum(models.ClubDocument.size_bytes), 0),
+            func.count(models.ClubDocument.id),
+        )
+        .filter(models.ClubDocument.club_id == club_id)
+        .one()
+    )
+
+    errors_query = db.query(models.ErrorLog).filter(models.ErrorLog.club_id == club_id)
+    recent_errors = (
+        errors_query.order_by(models.ErrorLog.created_at.desc())
+        .limit(_RECENT_ERROR_LIMIT)
+        .all()
+    )
+
+    return schemas.ClubOverviewOut(
+        club=_to_out(club),
+        attendance_percent=_attendance_percent(db, club_id, members_total),
+        usage=schemas.ClubUsageOut(
+            members_total=members_total,
+            members_active=members_active,
+            members_suspended=members_suspended,
+            sms_sent=sms_sent,
+            sms_failed=sms_failed,
+            storage_bytes=int(photo_bytes) + int(doc_bytes),
+            storage_photos=photo_count,
+            storage_documents=doc_count,
+            errors_total=errors_query.count(),
+        ),
+        recent_errors=[
+            schemas.ErrorLogOut.model_validate(e) for e in recent_errors
+        ],
+    )
 
 
 @router.get("/{club_id}/stats", response_model=schemas.ClubStatsOut)

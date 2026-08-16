@@ -53,9 +53,17 @@ def test_delete_club_with_every_dependent_row(client, db, test_club, make_member
     db.add(poll)
     db.flush()
     db.add(models.PollVote(poll_id=poll.id, member_id=president.id, choice="Yes"))
+
+    sms_log = models.SmsLog(phone="256700000003", status="sent", club_id=test_club.id)
+    error_log = models.ErrorLog(
+        method="GET", path="/club/events", exception_type="ValueError",
+        message="boom", traceback="...", club_id=test_club.id,
+    )
+    db.add_all([sms_log, error_log])
     db.commit()
 
     club_id, president_id = test_club.id, president.id
+    sms_log_id, error_log_id = sms_log.id, error_log.id
     res = client.delete(f"/admin/clubs/{club_id}", headers=_admin_auth(db))
     assert res.status_code == 200, res.text
     assert res.json() == {"deleted": True}
@@ -65,6 +73,14 @@ def test_delete_club_with_every_dependent_row(client, db, test_club, make_member
     db.expire_all()
     assert db.get(models.Club, club_id) is None
     assert db.get(models.Member, president_id) is None
+
+    # Logs outlive the club rather than being deleted with it: the global
+    # SMS totals and the error history would silently shrink otherwise.
+    # Only the club attribution is cleared, which is what frees the FK.
+    surviving_sms = db.get(models.SmsLog, sms_log_id)
+    surviving_error = db.get(models.ErrorLog, error_log_id)
+    assert surviving_sms is not None and surviving_sms.club_id is None
+    assert surviving_error is not None and surviving_error.club_id is None
 
 
 def test_delete_member_with_every_dependent_row(client, db, test_club, make_member):

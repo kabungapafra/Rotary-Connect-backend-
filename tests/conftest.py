@@ -73,6 +73,11 @@ def test_club(db):
     ).delete()
     db.query(models.Event).filter(models.Event.club_id == club_id).delete()
     db.query(models.Member).filter(models.Member.club_id == club_id).delete()
+    # Logs FK into clubs but deliberately outlive them (see delete_club) —
+    # drop them outright here, since unlike production these are throwaway
+    # rows and leaving them behind would leak between test runs.
+    db.query(models.SmsLog).filter(models.SmsLog.club_id == club_id).delete()
+    db.query(models.ErrorLog).filter(models.ErrorLog.club_id == club_id).delete()
     db.commit()
     row = db.get(models.Club, club_id)
     if row:
