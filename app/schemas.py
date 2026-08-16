@@ -267,14 +267,36 @@ class ClubUsageOut(BaseModel):
     errors_total: int
 
 
+class ClubOfficerOut(BaseModel):
+    """One of a club's three key officers, for the management screen."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    role: str
+    member_number: str
+    phone: str
+    email: str
+    status: str
+
+
 class ClubOverviewOut(BaseModel):
     """Everything the club management screen renders in one round trip —
     the screen opens on a click, so a single call keeps it from flashing
-    through several independent loading states."""
+    through several independent loading states.
+
+    The three officer fields are optional and stay in the payload as null
+    when the club has nobody in that role: an unfilled Secretary post is
+    something the screen should show, not hide.
+    """
 
     club: ClubOut
     attendance_percent: int
     usage: ClubUsageOut
+    president: ClubOfficerOut | None = None
+    president_elect: ClubOfficerOut | None = None
+    secretary: ClubOfficerOut | None = None
     recent_errors: list["ErrorLogOut"]
 
 

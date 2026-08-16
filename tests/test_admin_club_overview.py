@@ -127,6 +127,69 @@ def test_overview_is_zeroed_not_null_for_an_unused_club(client, db, test_club):
     assert res.json()["recent_errors"] == []
 
 
+def test_overview_names_the_three_officers(client, db, test_club, make_member):
+    """The screen names who to contact about a club. Ordinary members must
+    not be picked up, and each officer must land in its own slot."""
+    # Distinct names on purpose: the fixture defaults them all to the same
+    # one, which would let a swapped slot still satisfy the assertions.
+    president = make_member(
+        role="Club President", suffix=uuid.uuid4().hex[:8], name="Grace Nakato"
+    )
+    pe = make_member(
+        role="President-Elect", suffix=uuid.uuid4().hex[:8], name="Peter Okello"
+    )
+    secretary = make_member(
+        role="Secretary", suffix=uuid.uuid4().hex[:8], name="Sarah Nabirye"
+    )
+    make_member(role="Treasurer", suffix=uuid.uuid4().hex[:8], name="David Mugisha")
+    make_member(suffix=uuid.uuid4().hex[:8], name="Alice Auma")  # plain member
+    db.commit()
+
+    body = client.get(
+        f"/admin/clubs/{test_club.id}/overview", headers=_admin_auth(db)
+    ).json()
+
+    assert body["president"]["name"] == president.name
+    assert body["president"]["phone"] == president.phone
+    assert body["president_elect"]["name"] == pe.name
+    assert body["secretary"]["name"] == secretary.name
+
+
+def test_overview_recognises_a_president_promoted_by_rollover(
+    client, db, test_club, make_member
+):
+    """The annual rollover renames the incoming president from
+    "Club President" to "President". Both spellings mean president, so a
+    club that has been through a rollover must not show an empty slot."""
+    promoted = make_member(
+        role="President", suffix=uuid.uuid4().hex[:8], name="Robert Ssemwogerere"
+    )
+    db.commit()
+
+    body = client.get(
+        f"/admin/clubs/{test_club.id}/overview", headers=_admin_auth(db)
+    ).json()
+
+    assert body["president"]["name"] == promoted.name
+
+
+def test_overview_reports_unfilled_officer_posts_as_null(
+    client, db, test_club, make_member
+):
+    """A vacant Secretary post is a real finding for an admin, so it comes
+    back as an explicit null rather than being omitted from the payload."""
+    make_member(role="Club President", suffix=uuid.uuid4().hex[:8])
+    db.commit()
+
+    body = client.get(
+        f"/admin/clubs/{test_club.id}/overview", headers=_admin_auth(db)
+    ).json()
+
+    assert body["president"] is not None
+    assert "president_elect" in body and body["president_elect"] is None
+    assert "secretary" in body and body["secretary"] is None
+
+
 def test_overview_requires_admin_auth(client, test_club):
     """The screen exposes another club's error traces and usage — it must
     not be reachable without an admin token."""

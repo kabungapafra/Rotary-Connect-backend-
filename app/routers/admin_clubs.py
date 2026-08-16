@@ -16,6 +16,7 @@ from ..utils import (
     generate_pin,
     parse_display_date,
 )
+from . import club_members
 
 router = APIRouter(
     prefix="/admin/clubs", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -353,14 +354,22 @@ def club_overview(club_id: int, db: Session = Depends(get_db)):
     """Everything the club management screen needs, in one round trip."""
     club = _get_or_404(db, club_id)
 
-    member_rows = (
-        db.query(models.Member.status)
-        .filter(models.Member.club_id == club_id)
-        .all()
-    )
-    members_total = len(member_rows)
-    members_active = sum(1 for (s,) in member_rows if s == "active")
-    members_suspended = sum(1 for (s,) in member_rows if s == "suspended")
+    members = db.query(models.Member).filter(models.Member.club_id == club_id).all()
+    members_total = len(members)
+    members_active = sum(1 for m in members if m.status == "active")
+    members_suspended = sum(1 for m in members if m.status == "suspended")
+
+    # Same role resolution as the annual leadership transition, so the
+    # screen names the same people that rollover will act on. PRESIDENT_ROLES
+    # covers both spellings: "Club President" on a club's auto-created first
+    # president, "President" on anyone promoted by a rollover since.
+    def _officer(match) -> schemas.ClubOfficerOut | None:
+        found = next((m for m in members if match(m)), None)
+        return schemas.ClubOfficerOut.model_validate(found) if found else None
+
+    president = _officer(lambda m: m.role in club_members.PRESIDENT_ROLES)
+    president_elect = _officer(lambda m: m.role == "President-Elect")
+    secretary = _officer(lambda m: m.role == "Secretary")
 
     sms_rows = (
         db.query(models.SmsLog.status)
@@ -410,6 +419,9 @@ def club_overview(club_id: int, db: Session = Depends(get_db)):
             storage_documents=doc_count,
             errors_total=errors_query.count(),
         ),
+        president=president,
+        president_elect=president_elect,
+        secretary=secretary,
         recent_errors=[
             schemas.ErrorLogOut.model_validate(e) for e in recent_errors
         ],
