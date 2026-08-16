@@ -281,6 +281,70 @@ class ClubOfficerOut(BaseModel):
     status: str
 
 
+class AuditEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_email: str
+    action: str
+    subject: str
+    detail: str
+    created_at: datetime
+
+
+class ClubEventOversightOut(BaseModel):
+    """One of a club's events with its turnout, for the admin's event panel."""
+
+    id: int
+    name: str
+    meta: str
+    dow: str
+    # Null for a recurring weekly event; set for a one-off on this date.
+    event_date: date | None = None
+    rsvp_count: int
+    # False once a one-off event's date has passed. Recurring events are
+    # always upcoming — they have no end.
+    is_upcoming: bool
+    # Whether this event can still be cancelled: a past one-off is kept as
+    # a historical record, matching the club-side delete rule.
+    can_cancel: bool
+
+
+class ClubBroadcastCreate(BaseModel):
+    title: str
+    body: str
+    # all | board — "board" reaches only members flagged is_board, for
+    # committee-level announcements that would be noise club-wide.
+    audience: str = "all"
+
+
+class ClubBroadcastOut(BaseModel):
+    """What actually happened, not what was requested: push is best-effort
+    and silently disabled without FIREBASE_CREDENTIALS_JSON, so the sender
+    is told how many devices were reached rather than a bare success."""
+
+    recipients: int
+    devices: int
+    delivered: bool
+
+
+class ClubFinancesOut(BaseModel):
+    """A club's money, for the admin's per-club finance panel: the same
+    figures the club's own treasurer sees, plus who has and hasn't paid.
+
+    Read-only on purpose. Recording a payment stays with the club's
+    treasurer (POST /club/treasury/dues/{id}/pay) — an admin quietly marking
+    a member paid would put money in the books nobody in the club can
+    account for. The admin's job here is to see the position, not edit it.
+    """
+
+    summary: "TreasurySummaryOut"
+    dues: list["DuesMemberOut"]
+    recent_transactions: list["TransactionOut"]
+    dues_paid_count: int
+    dues_unpaid_count: int
+
+
 class ClubOverviewOut(BaseModel):
     """Everything the club management screen renders in one round trip —
     the screen opens on a click, so a single call keeps it from flashing

@@ -330,6 +330,42 @@ class ErrorLog(Base):
     )
 
 
+class AuditEntry(Base):
+    """One administrative action, for accountability: who suspended a club,
+    who removed a member, who broadcast an announcement.
+
+    Deliberately FK-free on its subject — club/member are stored as an id
+    plus a name snapshot — for the same reason MemberEvent is: the whole
+    point is to survive the thing it describes being deleted, and an FK
+    would either block that delete or cascade the record away. It also
+    keeps this table out of the manual FK cleanup in the admin delete
+    endpoints (see [delete_club]).
+
+    Never pruned by the 30-day sweep that clears error_logs/member_events:
+    those are diagnostics, this is a record.
+    """
+
+    __tablename__ = "audit_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Who did it. Admin id + the email at the time, so the entry still
+    # names someone after the admin account is renamed or removed.
+    actor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_email: Mapped[str] = mapped_column(String(120), default="")
+    # What they did, e.g. club.suspend | member.delete | club.broadcast.
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    # What it was done to.
+    club_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    club_name: Mapped[str] = mapped_column(String(160), default="")
+    subject: Mapped[str] = mapped_column(String(200), default="")
+    # Free-text detail for the row's specifics ("suspended -> active",
+    # "sent to 24 devices"). Not parsed — read by humans.
+    detail: Mapped[str] = mapped_column(String(400), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 class MemberEvent(Base):
     """A member-facing problem (failed PIN, account lockout, self-service
     PIN reset, ...) shown on the admin System Health page. Deliberately

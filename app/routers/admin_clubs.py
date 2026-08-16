@@ -4,9 +4,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, security
+from .. import config, models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
+from ..event_announcements import eat_today_date, unschedule_event_announcement
+from ..push import send_bulk_push
 from ..sms import send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo, store_club_logo
 from ..utils import (
@@ -16,7 +18,8 @@ from ..utils import (
     generate_pin,
     parse_display_date,
 )
-from . import club_members
+from .. import audit
+from . import club_members, treasury
 
 router = APIRouter(
     prefix="/admin/clubs", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -138,11 +141,21 @@ def create_club(
 
 
 @router.patch("/{club_id}/status", response_model=schemas.ClubOut)
-def set_club_status(club_id: int, payload: schemas.ClubStatusUpdate, db: Session = Depends(get_db)):
+def set_club_status(
+    club_id: int,
+    payload: schemas.ClubStatusUpdate,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
     club = _get_or_404(db, club_id)
     if payload.status not in ("active", "suspended"):
         raise HTTPException(status_code=422, detail="status must be 'active' or 'suspended'")
+    was = club.status
     club.status = payload.status
+    audit.record(
+        db, admin, f"club.{payload.status}", club=club,
+        detail=f"{was} -> {payload.status}",
+    )
     db.commit()
     db.refresh(club)
     return _to_out(club)
@@ -162,13 +175,21 @@ def set_all_clubs_sms_enabled(payload: schemas.ClubSmsUpdate, db: Session = Depe
 
 @router.patch("/{club_id}/sms", response_model=schemas.ClubOut)
 def set_club_sms_enabled(
-    club_id: int, payload: schemas.ClubSmsUpdate, db: Session = Depends(get_db)
+    club_id: int,
+    payload: schemas.ClubSmsUpdate,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
 ):
     """Withhold (or restore) SMS for one club specifically — independent
     of `status`, so a club stays otherwise fully active while its SMS is
     off (e.g. hasn't paid for SMS credits)."""
     club = _get_or_404(db, club_id)
     club.sms_enabled = payload.sms_enabled
+    audit.record(
+        db, admin,
+        "club.sms_on" if payload.sms_enabled else "club.sms_off",
+        club=club,
+    )
     db.commit()
     db.refresh(club)
     return _to_out(club)
@@ -221,7 +242,11 @@ def record_payment(club_id: int, payload: schemas.PaymentRecord, db: Session = D
 
 
 @router.delete("/{club_id}")
-def delete_club(club_id: int, db: Session = Depends(get_db)):
+def delete_club(
+    club_id: int,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
     """Remove a club and everything belonging to it. Every table with a
     non-nullable FK into clubs/members (added over time as features grew:
     polls, dues, transactions, minutes, milestones, gallery, apologies,
@@ -321,6 +346,9 @@ def delete_club(club_id: int, db: Session = Depends(get_db)):
     )
     if club.logo_storage_key:
         delete_gallery_image(club.logo_storage_key)
+    # Recorded before the delete so club.name is still readable; the entry
+    # holds a name snapshot rather than an FK precisely so it outlives this.
+    audit.record(db, admin, "club.delete", club=club, subject=club.name)
     db.delete(club)
     db.commit()
     return {"deleted": True}
@@ -425,6 +453,194 @@ def club_overview(club_id: int, db: Session = Depends(get_db)):
         recent_errors=[
             schemas.ErrorLogOut.model_validate(e) for e in recent_errors
         ],
+    )
+
+
+# How many of a club's most recent transactions the finance panel lists.
+_RECENT_TRANSACTION_LIMIT = 10
+
+
+@router.get("/{club_id}/finances", response_model=schemas.ClubFinancesOut)
+def club_finances(club_id: int, db: Session = Depends(get_db)):
+    """Dues and cash position for one club. Computed by the treasury module
+    rather than re-derived here, so the admin and the club's own treasurer
+    can never disagree about who has paid."""
+    _get_or_404(db, club_id)
+
+    dues = treasury.build_dues_roster(db, club_id)
+    transactions = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.club_id == club_id)
+        .order_by(models.Transaction.created_at.desc())
+        .limit(_RECENT_TRANSACTION_LIMIT)
+        .all()
+    )
+    return schemas.ClubFinancesOut(
+        summary=treasury.build_summary(db, club_id),
+        dues=dues,
+        recent_transactions=[
+            schemas.TransactionOut(
+                id=t.id,
+                kind=t.kind,
+                label=t.label,
+                amount=t.amount,
+                created_at=t.created_at,
+            )
+            for t in transactions
+        ],
+        dues_paid_count=sum(1 for d in dues if d.paid),
+        dues_unpaid_count=sum(1 for d in dues if not d.paid),
+    )
+
+
+# How many audit entries the club screen lists. The panel answers "what
+# changed here recently", not "show me the whole history".
+_AUDIT_LIMIT = 25
+
+
+@router.get("/{club_id}/audit", response_model=list[schemas.AuditEntryOut])
+def club_audit(club_id: int, db: Session = Depends(get_db)):
+    """Recent administrative actions taken against this club."""
+    _get_or_404(db, club_id)
+    return (
+        db.query(models.AuditEntry)
+        .filter(models.AuditEntry.club_id == club_id)
+        .order_by(models.AuditEntry.created_at.desc())
+        .limit(_AUDIT_LIMIT)
+        .all()
+    )
+
+
+@router.get("/{club_id}/events", response_model=list[schemas.ClubEventOversightOut])
+def club_events(club_id: int, db: Session = Depends(get_db)):
+    """A club's events with turnout, upcoming first.
+
+    RSVP counts come from one grouped query rather than a count per event —
+    a club with a long event history would otherwise issue one query per row.
+    """
+    _get_or_404(db, club_id)
+    events = db.query(models.Event).filter(models.Event.club_id == club_id).all()
+    if not events:
+        return []
+
+    counts = dict(
+        db.query(models.EventRsvp.event_id, func.count(models.EventRsvp.id))
+        .filter(models.EventRsvp.event_id.in_([e.id for e in events]))
+        .group_by(models.EventRsvp.event_id)
+        .all()
+    )
+    today = eat_today_date()
+
+    out = []
+    for e in events:
+        # A recurring event (no event_date) never falls into the past.
+        is_upcoming = e.event_date is None or e.event_date >= today
+        out.append(
+            schemas.ClubEventOversightOut(
+                id=e.id,
+                name=e.name,
+                meta=e.meta,
+                dow=e.dow,
+                event_date=e.event_date,
+                rsvp_count=counts.get(e.id, 0),
+                is_upcoming=is_upcoming,
+                can_cancel=is_upcoming,
+            )
+        )
+    # Upcoming first, then dated events soonest-first; recurring events have
+    # no date, so they sort ahead of dated ones within the upcoming group.
+    out.sort(key=lambda e: (not e.is_upcoming, e.event_date or date.min))
+    return out
+
+
+@router.delete("/{club_id}/events/{event_id}")
+def cancel_club_event(
+    club_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Cancel one of a club's events. Mirrors the club-side delete exactly,
+    including keeping past one-off events as a historical record and
+    clearing the RSVP rows that hold a non-nullable FK into events."""
+    _get_or_404(db, club_id)
+    event = db.get(models.Event, event_id)
+    if event is None or event.club_id != club_id:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.event_date is not None and event.event_date < eat_today_date():
+        raise HTTPException(
+            status_code=422,
+            detail="This event has already happened and can no longer be cancelled.",
+        )
+    unschedule_event_announcement(event.id)
+    if event.storage_key:
+        delete_gallery_image(event.storage_key)
+    db.query(models.EventRsvp).filter(models.EventRsvp.event_id == event.id).delete(
+        synchronize_session=False
+    )
+    audit.record(
+        db, admin, "event.cancel",
+        club=db.get(models.Club, club_id), subject=event.name,
+    )
+    db.delete(event)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/{club_id}/broadcast", response_model=schemas.ClubBroadcastOut)
+def club_broadcast(
+    club_id: int,
+    payload: schemas.ClubBroadcastCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin: models.AdminUser = Depends(get_current_admin),
+):
+    """Send one announcement to a club's members as a push notification.
+
+    Sent in the background: FCM is contacted once per device sequentially
+    (see push.send_bulk_push), so a club with many devices would otherwise
+    hold the request open for as long as the slowest token takes.
+    """
+    _get_or_404(db, club_id)
+    title = payload.title.strip()
+    body = payload.body.strip()
+    if not title or not body:
+        raise HTTPException(status_code=422, detail="Title and message are required")
+    if payload.audience not in ("all", "board"):
+        raise HTTPException(status_code=422, detail="audience must be 'all' or 'board'")
+
+    recipients = db.query(models.Member).filter(
+        models.Member.club_id == club_id, models.Member.status == "active"
+    )
+    if payload.audience == "board":
+        recipients = recipients.filter(models.Member.is_board.is_(True))
+    recipient_ids = {m.id for m in recipients}
+
+    # tokens_for_club already scopes to this club's active members; the
+    # board filter is applied on top rather than duplicating that query.
+    tokens = [
+        row.token
+        for row in db.query(models.DeviceToken).filter(
+            models.DeviceToken.member_id.in_(recipient_ids)
+        )
+    ] if recipient_ids else []
+
+    if tokens:
+        background_tasks.add_task(send_bulk_push, tokens, title, body)
+
+    club = _get_or_404(db, club_id)
+    audit.record(
+        db, admin, "club.broadcast", club=club, subject=title,
+        detail=f"{payload.audience}: {len(recipient_ids)} members, {len(tokens)} devices",
+    )
+    db.commit()
+
+    return schemas.ClubBroadcastOut(
+        recipients=len(recipient_ids),
+        devices=len(tokens),
+        # False when push isn't configured at all, so the dashboard can say
+        # "nothing was sent" instead of implying delivery that never happened.
+        delivered=bool(tokens) and config.PUSH_ENABLED,
     )
 
 

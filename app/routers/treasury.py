@@ -27,20 +27,20 @@ def _get_dues_setting(db: Session, club_id: int) -> models.ClubDuesSetting:
     return setting
 
 
-@router.get("/summary", response_model=schemas.TreasurySummaryOut)
-def treasury_summary(
-    db: Session = Depends(get_db),
-    member: models.Member = Depends(get_current_member),
-):
-    setting = _get_dues_setting(db, member.club_id)
+def build_summary(db: Session, club_id: int) -> schemas.TreasurySummaryOut:
+    """One club's dues and cash position. Takes club_id explicitly rather
+    than reading it off the caller, so the admin dashboard can ask about a
+    club it isn't a member of and get numbers computed the same way the
+    club's own treasurer sees them — one definition, not two that drift."""
+    setting = _get_dues_setting(db, club_id)
     period_label = current_period_label(setting.period)
     member_count = (
-        db.query(models.Member).filter(models.Member.club_id == member.club_id).count()
+        db.query(models.Member).filter(models.Member.club_id == club_id).count()
     )
     paid_count = (
         db.query(models.DuesPayment)
         .filter(
-            models.DuesPayment.club_id == member.club_id,
+            models.DuesPayment.club_id == club_id,
             models.DuesPayment.period_label == period_label,
         )
         .count()
@@ -48,13 +48,13 @@ def treasury_summary(
     total_income = sum(
         t.amount
         for t in db.query(models.Transaction).filter(
-            models.Transaction.club_id == member.club_id, models.Transaction.kind == "income"
+            models.Transaction.club_id == club_id, models.Transaction.kind == "income"
         )
     )
     total_expenses = sum(
         t.amount
         for t in db.query(models.Transaction).filter(
-            models.Transaction.club_id == member.club_id, models.Transaction.kind == "expense"
+            models.Transaction.club_id == club_id, models.Transaction.kind == "expense"
         )
     )
     return schemas.TreasurySummaryOut(
@@ -66,6 +66,40 @@ def treasury_summary(
         total_income=total_income,
         total_expenses=total_expenses,
     )
+
+
+def build_dues_roster(db: Session, club_id: int) -> list[schemas.DuesMemberOut]:
+    """Who has and hasn't paid for the current period. Same explicit-club_id
+    reasoning as build_summary above."""
+    setting = _get_dues_setting(db, club_id)
+    period_label = current_period_label(setting.period)
+    paid_ids = {
+        row.member_id
+        for row in db.query(models.DuesPayment).filter(
+            models.DuesPayment.club_id == club_id,
+            models.DuesPayment.period_label == period_label,
+        )
+    }
+    members = (
+        db.query(models.Member)
+        .filter(models.Member.club_id == club_id)
+        .order_by(models.Member.name)
+        .all()
+    )
+    return [
+        schemas.DuesMemberOut(
+            member_id=m.id, name=m.name, role=m.role, paid=m.id in paid_ids
+        )
+        for m in members
+    ]
+
+
+@router.get("/summary", response_model=schemas.TreasurySummaryOut)
+def treasury_summary(
+    db: Session = Depends(get_db),
+    member: models.Member = Depends(get_current_member),
+):
+    return build_summary(db, member.club_id)
 
 
 @router.post("/dues/settings", response_model=schemas.TreasurySummaryOut)
@@ -91,27 +125,7 @@ def list_dues(
     db: Session = Depends(get_db),
     member: models.Member = Depends(get_current_member),
 ):
-    setting = _get_dues_setting(db, member.club_id)
-    period_label = current_period_label(setting.period)
-    paid_ids = {
-        row.member_id
-        for row in db.query(models.DuesPayment).filter(
-            models.DuesPayment.club_id == member.club_id,
-            models.DuesPayment.period_label == period_label,
-        )
-    }
-    members = (
-        db.query(models.Member)
-        .filter(models.Member.club_id == member.club_id)
-        .order_by(models.Member.name)
-        .all()
-    )
-    return [
-        schemas.DuesMemberOut(
-            member_id=m.id, name=m.name, role=m.role, paid=m.id in paid_ids
-        )
-        for m in members
-    ]
+    return build_dues_roster(db, member.club_id)
 
 
 @router.post("/dues/{member_id}/pay", response_model=schemas.DuesMemberOut)
