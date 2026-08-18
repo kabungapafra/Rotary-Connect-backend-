@@ -317,12 +317,9 @@ def delete_club(
     db.query(models.ClubDuesSetting).filter(models.ClubDuesSetting.club_id == club_id).delete(
         synchronize_session=False
     )
-    db.query(models.Member).filter(models.Member.club_id == club_id).delete(
-        synchronize_session=False
-    )
-    db.query(models.Event).filter(models.Event.club_id == club_id).delete(
-        synchronize_session=False
-    )
+    # project_updates.created_by FKs into members, so projects must be
+    # cleared BEFORE the member delete below, not after — otherwise deleting
+    # a club whose members wrote project updates trips a FK violation.
     project_ids = [
         p.id for p in db.query(models.Project.id).filter(models.Project.club_id == club_id)
     ]
@@ -330,7 +327,20 @@ def delete_club(
         db.query(models.ProjectUpdate).filter(
             models.ProjectUpdate.project_id.in_(project_ids)
         ).delete(synchronize_session=False)
+    if member_ids:
+        # Also by author: an update this club's member wrote on *another*
+        # club's project would survive the project_id sweep above and still
+        # hold a reference to the member row we are about to remove.
+        db.query(models.ProjectUpdate).filter(
+            models.ProjectUpdate.created_by.in_(member_ids)
+        ).delete(synchronize_session=False)
     db.query(models.Project).filter(models.Project.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Member).filter(models.Member.club_id == club_id).delete(
+        synchronize_session=False
+    )
+    db.query(models.Event).filter(models.Event.club_id == club_id).delete(
         synchronize_session=False
     )
     # sms_logs and error_logs also FK into clubs, but they are logs: the

@@ -33,7 +33,15 @@ def test_delete_club_with_every_dependent_row(client, db, test_club, make_member
     db.flush()
     db.add(models.EventRsvp(event_id=event.id, name="Guest", phone="256700000001"))
 
-    db.add(models.Project(club_id=test_club.id, name="Borehole", area="", pct=0, desc="", deadline=""))
+    project = models.Project(club_id=test_club.id, name="Borehole", area="", pct=0, desc="", deadline="")
+    db.add(project)
+    db.flush()
+    # project_updates.created_by FKs into members, so a club whose members
+    # logged project progress is the case that regressed: the delete used to
+    # remove members before these rows. Without one seeded here the ordering
+    # bug is invisible.
+    db.add(models.ProjectUpdate(project_id=project.id, pct=25, note="Drilling started", created_by=president.id))
+    db.add(models.PastLeaderTerm(club_id=test_club.id, years="2018/19", president="Jane Doe", secretary="John Roe", created_by=president.id))
     db.add(models.GuestVisit(club_id=test_club.id, name="Visitor", phone="256700000002", visit_date=date.today()))
     db.add(models.GalleryPhoto(club_id=test_club.id, album="General", image="data:image/png;base64,x", uploaded_by=president.id))
     db.add(models.Apology(club_id=test_club.id, member_id=president.id, meeting_date=date.today(), reason="Travel"))
@@ -95,6 +103,9 @@ def test_delete_member_with_every_dependent_row(client, db, test_club, make_memb
     db.add(models.Transaction(club_id=test_club.id, kind="expense", label="Venue", amount=5000, created_by=member.id))
     db.add(models.Minute(club_id=test_club.id, title="Minutes", meeting_date=date.today(), created_by=member.id))
     db.add(models.Milestone(club_id=test_club.id, year="2026", title="Award", created_by=member.id))
+    # past_leader_terms.created_by FKs into members and was the one member
+    # reference the delete never cleared.
+    db.add(models.PastLeaderTerm(club_id=test_club.id, years="2020/21", president="Ada L", secretary="Alan T", created_by=member.id))
     db.add(models.DeviceToken(member_id=member.id, token=f"tok-{uuid.uuid4().hex}", platform="ios"))
     db.add(models.ClubDocument(club_id=test_club.id, title="Bylaws", url="https://r2/y.pdf", storage_key="docs/y.pdf", created_by=member.id))
 
