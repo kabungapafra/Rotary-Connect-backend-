@@ -9,7 +9,7 @@ from ..database import get_db
 from ..security import get_current_admin
 from ..event_announcements import eat_today_date, unschedule_event_announcement
 from ..push import send_bulk_push
-from ..sms import APP_DOWNLOAD_LINE, send_sms
+from ..sms import APP_DOWNLOAD_LINE, normalize_ugandan_phone, send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo, store_club_logo
 from ..utils import (
     compute_payment_status,
@@ -72,6 +72,12 @@ def create_club(
     payload: schemas.ClubCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
     president_phone = payload.president_phone.strip()
+    if president_phone:
+        president_phone = normalize_ugandan_phone(president_phone)
+        if president_phone is None:
+            raise HTTPException(
+                status_code=422, detail="Enter a valid phone number for the president"
+            )
     if president_phone and db.query(models.Member).filter(
         models.Member.phone == president_phone
     ).first():

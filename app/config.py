@@ -25,6 +25,17 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 YOOLA_API_KEY = os.getenv("YOOLA_API_KEY", "")
 YOOLA_API_URL = os.getenv("YOOLA_API_URL", "https://yoolasms.com/api/v1/send")
 SMS_ENABLED = bool(YOOLA_API_KEY)
+# Numbers that must never be texted, matched by prefix on the normalised
+# 256... form. The demo/reviewer clubs are seeded with placeholder numbers
+# that sit inside live Ugandan ranges, so without this an automated sweep
+# would text whoever actually owns them, at our cost. Prefix-based rather
+# than a club-level switch because demo clubs also contain real people who
+# should still receive their SMS.
+SMS_BLOCKED_PREFIXES = tuple(
+    p.strip()
+    for p in os.getenv("SMS_BLOCKED_PREFIXES", "2567000000,2567800001").split(",")
+    if p.strip()
+)
 
 # This backend's own public URL — used to build real, working links (event
 # registration QR codes) rather than a domain the club doesn't control.

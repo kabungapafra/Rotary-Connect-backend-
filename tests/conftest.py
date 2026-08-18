@@ -10,7 +10,7 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from app import models, security
+from app import config, models, security
 from app.database import SessionLocal
 from app.main import app
 
@@ -19,6 +19,16 @@ from app.main import app
 def client():
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _never_send_real_sms(monkeypatch):
+    """A developer .env carrying a live YOOLA_API_KEY makes config.SMS_ENABLED
+    true, which meant any test creating a member with a valid phone number
+    fired a real SMS at the gateway — real money, to whoever owns that
+    number. Tests must never reach the provider, so it is forced off here.
+    Tests that specifically exercise send_sms patch it back on themselves."""
+    monkeypatch.setattr(config, "SMS_ENABLED", False)
 
 
 @pytest.fixture(autouse=True)

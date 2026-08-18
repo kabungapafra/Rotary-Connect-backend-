@@ -106,6 +106,11 @@ def send_sms(
         return False
 
     number = normalize_ugandan_phone(phone)
+    if number is not None and number.startswith(config.SMS_BLOCKED_PREFIXES):
+        # Deliberately not written to SmsLog: nothing was sent and nothing
+        # was charged, so it must not show up in the per-club usage figures.
+        logger.info("Blocked demo/placeholder number %s — no SMS sent", number)
+        return False
     if number is None:
         logger.warning("Skipped SMS to invalid phone number: %r", phone)
         return False

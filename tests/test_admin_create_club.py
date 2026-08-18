@@ -16,7 +16,9 @@ def _admin_auth(db):
 
 
 def test_president_dob_is_saved_from_the_wizard(client, db):
-    phone = f"2567{uuid.uuid4().hex[:8]}"
+    # Must be a real Ugandan number shape: the endpoint normalises and
+    # rejects anything that is not 256 + 9 digits.
+    phone = f"25677{uuid.uuid4().int % 10**7:07d}"
     res = client.post(
         "/admin/clubs",
         json={

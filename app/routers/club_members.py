@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_member
-from ..sms import APP_DOWNLOAD_LINE, send_sms
+from ..sms import APP_DOWNLOAD_LINE, normalize_ugandan_phone, send_sms
 from ..utils import generate_member_number, generate_pin
 
 router = APIRouter(prefix="/club/members", tags=["club"])
@@ -69,7 +69,9 @@ def add_member(
 ):
     _require_manager(member)
     name = payload.name.strip()
-    phone = payload.phone.strip()
+    phone = normalize_ugandan_phone(payload.phone)
+    if phone is None:
+        raise HTTPException(status_code=422, detail="Enter a valid phone number")
     if not name or not phone:
         raise HTTPException(status_code=422, detail="Name and phone are required")
     if db.query(models.Member).filter(models.Member.phone == phone).first():
