@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config, models, security
+from app import sms as sms_module
 from app.database import SessionLocal
 from app.main import app
 
@@ -23,12 +24,27 @@ def client():
 
 @pytest.fixture(autouse=True)
 def _never_send_real_sms(monkeypatch):
-    """A developer .env carrying a live YOOLA_API_KEY makes config.SMS_ENABLED
-    true, which meant any test creating a member with a valid phone number
-    fired a real SMS at the gateway — real money, to whoever owns that
-    number. Tests must never reach the provider, so it is forced off here.
-    Tests that specifically exercise send_sms patch it back on themselves."""
+    """Tests must never reach the SMS provider.
+
+    A developer .env carrying a live YOOLA_API_KEY makes config.SMS_ENABLED
+    true, so any test creating a member with a valid phone fired a real SMS
+    — real money, to whoever owns that number. On 18 Aug 2026 a suite run
+    did exactly that, including to two randomly generated live numbers.
+
+    Two independent guards, because relying on the flag alone was what
+    failed: SMS_ENABLED is forced off, and the HTTP call itself is stubbed
+    so even a test that turns the flag back on cannot reach the network.
+    Tests asserting on send behaviour patch requests.post themselves, which
+    overrides this stub for their duration."""
     monkeypatch.setattr(config, "SMS_ENABLED", False)
+    monkeypatch.setattr(sms_module.requests, "post", _forbid_network_call)
+
+
+def _forbid_network_call(*args, **kwargs):
+    raise AssertionError(
+        "A test tried to make a real HTTP call to the SMS gateway. "
+        "Patch requests.post in the test instead."
+    )
 
 
 @pytest.fixture(autouse=True)

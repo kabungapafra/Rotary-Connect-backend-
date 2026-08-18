@@ -33,7 +33,7 @@ SMS_ENABLED = bool(YOOLA_API_KEY)
 # should still receive their SMS.
 SMS_BLOCKED_PREFIXES = tuple(
     p.strip()
-    for p in os.getenv("SMS_BLOCKED_PREFIXES", "2567000000,2567800001").split(",")
+    for p in os.getenv("SMS_BLOCKED_PREFIXES", "256700000,2567800001").split(",")
     if p.strip()
 )
 

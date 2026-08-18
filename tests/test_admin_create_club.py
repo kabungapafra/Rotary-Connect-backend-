@@ -18,7 +18,9 @@ def _admin_auth(db):
 def test_president_dob_is_saved_from_the_wizard(client, db):
     # Must be a real Ugandan number shape: the endpoint normalises and
     # rejects anything that is not 256 + 9 digits.
-    phone = f"25677{uuid.uuid4().int % 10**7:07d}"
+    # Must stay inside the blocked placeholder range: this previously
+    # generated live Ugandan numbers and the endpoint really texted them.
+    phone = f"256700000{uuid.uuid4().int % 1000:03d}"
     res = client.post(
         "/admin/clubs",
         json={

@@ -35,7 +35,7 @@ def test_president_can_add_a_member_and_the_returned_pin_matches(client, make_me
     president = make_member(role=PRESIDENT_ROLE, suffix="103")
     res = client.post(
         "/club/members",
-        json={"name": "New Guy", "phone": "256700100103", "email": "", "dob": ""},
+        json={"name": "New Guy", "phone": "256700000103", "email": "", "dob": ""},
         headers=_auth(president),
     )
     assert res.status_code == 200

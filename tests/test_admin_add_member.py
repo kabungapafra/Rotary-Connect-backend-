@@ -20,7 +20,7 @@ def test_admin_can_add_a_member_and_the_returned_pin_matches(client, db, test_cl
         json={
             "club_id": test_club.id,
             "name": "New Guy",
-            "phone": "256700200201",
+            "phone": "256700000201",
             "email": "",
             "dob": "",
         },

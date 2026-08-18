@@ -75,7 +75,7 @@ def test_secretary_shares_president_management_powers(client, make_member, make_
 
     res = client.post(
         "/club/members",
-        json={"name": "Added By Secretary", "phone": "256700990130", "role": "Member"},
+        json={"name": "Added By Secretary", "phone": "256700000130", "role": "Member"},
         headers=_auth(secretary),
     )
     assert res.status_code == 200
