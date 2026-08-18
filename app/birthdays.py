@@ -13,6 +13,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from . import models
+from .push import send_push
 from .sms import send_sms
 
 logger = logging.getLogger("rotary.birthdays")
@@ -44,14 +45,30 @@ def wish_if_due(db: Session, member: models.Member, today: date | None = None) -
     month_day = _parse_month_day(member.dob)
     if month_day != (today.month, today.day):
         return
+    first_name = member.name.split()[0]
     sent = send_sms(
         member.phone,
-        f"Happy birthday, {member.name.split()[0]}! 🎉 Wishing you a wonderful year "
+        f"Happy birthday, {first_name}! 🎉 Wishing you a wonderful year "
         f"ahead from all of us at {member.club.name}.",
         club_id=member.club_id,
         sms_type="birthday",
     )
-    if sent:
+    # Push as well as SMS, same as the dues reminder: a member with the app
+    # installed gets it in-app even where their club has SMS withheld.
+    pushed = False
+    for row in db.query(models.DeviceToken).filter(
+        models.DeviceToken.member_id == member.id
+    ):
+        if send_push(
+            row.token,
+            "Happy birthday! 🎉",
+            f"Wishing you a wonderful year ahead from all of us at {member.club.name}.",
+            data={"type": "birthday"},
+        ):
+            pushed = True
+    # Marked once either channel got through, so a member reached by push
+    # alone is not wished again on the next sweep.
+    if sent or pushed:
         member.last_birthday_wished = today
         db.commit()
 
