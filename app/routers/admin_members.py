@@ -43,8 +43,13 @@ def list_members(
 
     q = search.strip().lower()
     if q:
+        # Member number is how the admin dashboard identifies people on
+        # screen, so it has to be searchable too — looking someone up by the
+        # number shown next to their name previously returned nothing.
         query = query.filter(
-            (models.Member.name.ilike(f"%{q}%")) | (models.Member.phone.ilike(f"%{q}%"))
+            (models.Member.name.ilike(f"%{q}%"))
+            | (models.Member.phone.ilike(f"%{q}%"))
+            | (models.Member.member_number.ilike(f"%{q}%"))
         )
     if status_filter != "all":
         query = query.filter(models.Member.status == status_filter)
