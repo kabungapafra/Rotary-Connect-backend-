@@ -47,6 +47,16 @@ R2_ENABLED = bool(R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY an
 # reports itself unavailable (never errors at import) when unconfigured.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_ENABLED = bool(GROQ_API_KEY)
+# Point this at a Cloudflare AI Gateway to get request/error logs, token and
+# cost analytics, caching and retry/fallback in front of Groq — the gateway
+# speaks the same OpenAI-compatible schema, so only the base URL changes:
+# https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway_id>/groq
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+# Only needed when GROQ_BASE_URL points at an *authenticated* AI Gateway:
+# the gateway wants its own bearer token in cf-aig-authorization, separate
+# from the Groq key that still authenticates against Groq itself. Unset
+# when calling Groq directly.
+AI_GATEWAY_TOKEN = os.getenv("AI_GATEWAY_TOKEN", "")
 # ffmpeg re-encodes uploads to small mono audio before hitting Groq's file
 # size cap; override when the binary isn't on PATH (local dev sandboxes).
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")

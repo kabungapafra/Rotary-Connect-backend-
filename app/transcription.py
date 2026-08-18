@@ -25,7 +25,6 @@ from .database import SessionLocal
 
 logger = logging.getLogger("rotary.transcription")
 
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 WHISPER_MODEL = "whisper-large-v3-turbo"
 CHAT_MODEL = "llama-3.3-70b-versatile"
 
@@ -81,11 +80,20 @@ def _reencode_and_chunk(src: Path, workdir: Path) -> list[Path]:
     return chunks
 
 
+def _groq_headers() -> dict[str, str]:
+    """Groq's own bearer token, plus the AI Gateway's token when requests are
+    routed through an authenticated gateway rather than straight to Groq."""
+    headers = {"Authorization": f"Bearer {config.GROQ_API_KEY}"}
+    if config.AI_GATEWAY_TOKEN:
+        headers["cf-aig-authorization"] = f"Bearer {config.AI_GATEWAY_TOKEN}"
+    return headers
+
+
 def _transcribe_chunk(path: Path) -> str:
     with open(path, "rb") as f:
         res = requests.post(
-            f"{GROQ_BASE_URL}/audio/transcriptions",
-            headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
+            f"{config.GROQ_BASE_URL}/audio/transcriptions",
+            headers=_groq_headers(),
             files={"file": (path.name, f, "audio/mpeg")},
             data={"model": WHISPER_MODEL, "response_format": "text"},
             timeout=600,
@@ -97,8 +105,8 @@ def _transcribe_chunk(path: Path) -> str:
 
 def _chat(system: str, user: str) -> str:
     res = requests.post(
-        f"{GROQ_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
+        f"{config.GROQ_BASE_URL}/chat/completions",
+        headers=_groq_headers(),
         json={
             "model": CHAT_MODEL,
             "messages": [
