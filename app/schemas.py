@@ -212,6 +212,12 @@ class ClubSmsTypesUpdate(BaseModel):
     sms_self_service_pin_reset_enabled: bool
 
 
+class ClubLogoUpdate(BaseModel):
+    # A data URL from the dashboard's file picker, or null to clear the logo
+    # and fall back to the club's initials.
+    logo: str | None = None
+
+
 class ClubCharterDateUpdate(BaseModel):
     charter_date: str | None = None  # "DD Mon YYYY", or null to clear
 

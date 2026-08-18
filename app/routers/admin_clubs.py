@@ -237,6 +237,38 @@ def set_club_sms_types(
     return _to_out(club)
 
 
+@router.patch("/{club_id}/logo", response_model=schemas.ClubOut)
+def set_club_logo(
+    club_id: int, payload: schemas.ClubLogoUpdate, db: Session = Depends(get_db)
+):
+    """Set or replace a club's logo after onboarding.
+
+    A logo could previously only be supplied when the club was created, so a
+    club onboarded without one had no way to ever get one. Passing null
+    clears it, and the club falls back to its initials.
+
+    The old R2 object is deleted only once the new one is safely stored, so
+    a failed upload cannot leave the club with no logo at all.
+    """
+    club = _get_or_404(db, club_id)
+    previous_key = club.logo_storage_key
+
+    if payload.logo is None or not payload.logo.strip():
+        club.logo, club.logo_storage_key = None, None
+    else:
+        try:
+            club.logo, club.logo_storage_key = store_club_logo(payload.logo, club.id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+    db.commit()
+    db.refresh(club)
+    # Only now that the replacement is committed is the old file expendable.
+    if previous_key and previous_key != club.logo_storage_key:
+        delete_gallery_image(previous_key)
+    return _to_out(club)
+
+
 @router.patch("/{club_id}/charter-date", response_model=schemas.ClubOut)
 def set_club_charter_date(
     club_id: int, payload: schemas.ClubCharterDateUpdate, db: Session = Depends(get_db)
