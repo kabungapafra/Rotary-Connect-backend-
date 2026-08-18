@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_admin
-from ..sms import send_sms
+from ..sms import APP_DOWNLOAD_LINE, send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo
 from ..utils import generate_member_number, generate_pin
 
@@ -97,7 +97,7 @@ def create_member(
         phone,
         f"Welcome to {club.name}! Your Rotary Connect login: "
         f"Member No. {new_member.member_number}, PIN {pin}. "
-        f"Download the app and sign in to get started.",
+        + APP_DOWNLOAD_LINE,
         club_id=club.id,
         sms_type="new_member",
     )

@@ -17,6 +17,15 @@ logger = logging.getLogger("rotary.sms")
 
 _MAX_MESSAGE_LENGTH = 480  # a handful of SMS segments; also caps abuse cost
 
+# Store links appended to first-time credential messages, so a new member can
+# install the app straight from the SMS instead of searching the stores for
+# it. Defined once here because three different flows hand out credentials
+# (system admin adds a member, president adds a member, new club president)
+# and their instructions must not drift apart.
+ANDROID_APP_URL = "https://play.google.com/store/apps/details?id=com.digiflecttech.rotaryconnect"
+IOS_APP_URL = "https://apps.apple.com/us/app/rotary-connect-club-meetings/id6793908530"
+APP_DOWNLOAD_LINE = f"Get the app - Android: {ANDROID_APP_URL} iPhone: {IOS_APP_URL}"
+
 # Every distinct kind of message the app sends, mapped to the Club column
 # that gates it — each is on by default (see the model) so nothing changes
 # until a club's SMS preferences are edited. Keys are what call sites pass

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas, security
 from ..database import get_db
 from ..security import get_current_member
-from ..sms import send_sms
+from ..sms import APP_DOWNLOAD_LINE, send_sms
 from ..utils import generate_member_number, generate_pin
 
 router = APIRouter(prefix="/club/members", tags=["club"])
@@ -98,7 +98,7 @@ def add_member(
         phone,
         f"Welcome to {member.club.name}! Your Rotary Connect login: "
         f"Member No. {new_member.member_number}, PIN {pin}. "
-        f"Download the app and sign in to get started.",
+        + APP_DOWNLOAD_LINE,
         club_id=member.club_id,
         sms_type="new_member",
     )

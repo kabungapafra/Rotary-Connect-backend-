@@ -9,7 +9,7 @@ from ..database import get_db
 from ..security import get_current_admin
 from ..event_announcements import eat_today_date, unschedule_event_announcement
 from ..push import send_bulk_push
-from ..sms import send_sms
+from ..sms import APP_DOWNLOAD_LINE, send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo, store_club_logo
 from ..utils import (
     compute_payment_status,
@@ -130,7 +130,7 @@ def create_club(
             president_phone,
             f"Welcome aboard Rotary Connect, President - {club.name}. "
             f"Your login: Member No. {president.member_number} or your phone number, PIN {pin}. "
-            f"Download the app and sign in to get started.",
+            + APP_DOWNLOAD_LINE,
             club_id=club.id,
             sms_type="new_president",
         )
