@@ -26,7 +26,12 @@ from .database import SessionLocal
 logger = logging.getLogger("rotary.transcription")
 
 WHISPER_MODEL = "whisper-large-v3-turbo"
-CHAT_MODEL = "llama-3.3-70b-versatile"
+# Groq decommissioned llama-3.3-70b-versatile — it 404s ("model_not_found"),
+# which broke minutes drafting silently since nobody had recorded a meeting
+# yet. gpt-oss-120b is the closest replacement still on the account. It is a
+# *reasoning* model: it spends completion tokens thinking before it writes,
+# so never cap max_tokens low here or `content` comes back empty.
+CHAT_MODEL = "openai/gpt-oss-120b"
 
 # 16kHz mono at 24kbps keeps 30 minutes of speech around 5MB — comfortably
 # under Groq's file cap with headroom for container overhead.
