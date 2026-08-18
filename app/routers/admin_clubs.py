@@ -97,6 +97,14 @@ def create_club(
         last_paid_date=parse_display_date(payload.first_payment_date),
         next_due_date=parse_display_date(payload.next_due_date),
         charter_date=parse_display_date(payload.charter_date),
+        # Stamp the current Rotary year so the leadership sweep treats this
+        # club as already handled for it. Without this the field is NULL,
+        # which the sweep reads as "never transitioned" — a club onboarded
+        # in, say, September with a President-Elect named would have its
+        # brand-new President demoted to Immediate Past President overnight
+        # and its whole board cleared. The president just appointed keeps the
+        # seat until the *next* July, even if that is days away.
+        last_leadership_transition_year=date.today().year,
     )
     db.add(club)
     db.flush()
