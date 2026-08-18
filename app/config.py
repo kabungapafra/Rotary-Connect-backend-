@@ -15,6 +15,15 @@ JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))
 
+# A member counts as online if their last authenticated request was within
+# this window. The app polls on screen changes rather than continuously, so
+# a few minutes of slack avoids someone flickering offline while reading a
+# single screen.
+ONLINE_WINDOW_MINUTES = int(os.getenv("ONLINE_WINDOW_MINUTES", "5"))
+# Never stamp last_seen_at more often than this per member — otherwise every
+# authenticated request becomes a write.
+PRESENCE_WRITE_THROTTLE_SECONDS = int(os.getenv("PRESENCE_WRITE_THROTTLE_SECONDS", "60"))
+
 # Bootstrap system-admin account, created on first startup if missing.
 # Override both in production.
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@rotary.org")

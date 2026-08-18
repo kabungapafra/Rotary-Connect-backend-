@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from . import config, models
 from .database import get_db
+
+logger = logging.getLogger("rotary.security")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
@@ -54,6 +57,30 @@ def create_access_token(member_id: int) -> str:
     return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
 
 
+def _touch_last_seen(db: Session, member: models.Member) -> None:
+    """Record that this member is active, for the admin dashboard's online
+    indicator.
+
+    Deliberately cheap and deliberately silent. The write is throttled so a
+    burst of requests costs one UPDATE per minute, not one per request, and
+    the whole thing is swallowed on failure: presence is a nicety, and it
+    must never be the reason a member's real request fails.
+    """
+    now = datetime.now(timezone.utc)
+    previous = member.last_seen_at
+    if previous is not None:
+        if previous.tzinfo is None:
+            previous = previous.replace(tzinfo=timezone.utc)
+        if (now - previous).total_seconds() < config.PRESENCE_WRITE_THROTTLE_SECONDS:
+            return
+    try:
+        member.last_seen_at = now
+        db.commit()
+    except Exception:  # pragma: no cover - presence must never break a request
+        logger.warning("Could not record last_seen_at for member %s", member.id, exc_info=True)
+        db.rollback()
+
+
 def get_current_member(
     token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> models.Member:
@@ -73,6 +100,7 @@ def get_current_member(
     member = db.get(models.Member, member_id)
     if member is None or member.status != "active":
         raise credentials_error
+    _touch_last_seen(db, member)
     return member
 
 

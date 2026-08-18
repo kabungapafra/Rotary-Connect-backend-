@@ -148,6 +148,10 @@ class Member(Base):
     # check idempotent so it's safe to run from multiple trigger points
     # (daily sweep, login, check-in) without double-sending.
     last_birthday_wished: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Stamped by get_current_member on authenticated traffic, so "online"
+    # can be derived without the app having to send heartbeats. Nullable:
+    # members who predate this have simply never been seen under it.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Dues period label (e.g. "2026-Q3") this member was last sent a push
     # reminder for — same idempotency trick as last_birthday_wished, so the
     # weekly sweep can run as often as it likes without repeat-nagging.

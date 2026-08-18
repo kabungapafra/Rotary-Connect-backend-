@@ -1,11 +1,11 @@
 import random
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import models
+from . import config, models
 
 DATE_FORMAT = "%d %b %Y"  # e.g. "12 Aug 2026" — matches the dashboard's own display format
 
@@ -128,3 +128,37 @@ def is_club_access_blocked(club: models.Club) -> bool:
     moment next_due_date moves back into the future — no separate
     "un-suspend" step needed."""
     return club.status == "suspended" or compute_payment_status(club.next_due_date) == "overdue"
+
+
+def online_cutoff() -> datetime:
+    """Timestamps at or after this count as online."""
+    return datetime.now(timezone.utc) - timedelta(minutes=config.ONLINE_WINDOW_MINUTES)
+
+
+def is_online(last_seen: datetime | None) -> bool:
+    if last_seen is None:
+        return False
+    # Rows written before the column was timezone-aware, or by a driver that
+    # dropped the tzinfo, would otherwise blow up the comparison.
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return last_seen >= online_cutoff()
+
+
+def online_member_counts(db: Session, club_ids: list[int]) -> dict[int, int]:
+    """How many members of each club are currently online, in one query
+    rather than one per club."""
+    if not club_ids:
+        return {}
+    rows = (
+        db.query(models.Member.club_id, func.count(models.Member.id))
+        .filter(
+            models.Member.club_id.in_(club_ids),
+            models.Member.status == "active",
+            models.Member.last_seen_at.isnot(None),
+            models.Member.last_seen_at >= online_cutoff(),
+        )
+        .group_by(models.Member.club_id)
+        .all()
+    )
+    return {club_id: count for club_id, count in rows}

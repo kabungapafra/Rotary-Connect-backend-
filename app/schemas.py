@@ -147,6 +147,9 @@ class ClubOut(BaseModel):
     joined: str
     logo: str | None = None
     charter_date: str | None = None
+    # A club is "online" when at least one of its members is.
+    is_online: bool = False
+    online_member_count: int = 0
     sms_enabled: bool = True
     sms_birthday_enabled: bool = True
     sms_guest_thank_you_enabled: bool = True
@@ -370,6 +373,10 @@ class AdminMemberOut(BaseModel):
     phone: str
     club: str
     status: str
+    # Derived from members.last_seen_at against ONLINE_WINDOW_MINUTES.
+    # Defaulted so any caller built before this stays valid.
+    is_online: bool = False
+    last_seen_at: datetime | None = None
 
 
 class AdminMemberCreate(BaseModel):

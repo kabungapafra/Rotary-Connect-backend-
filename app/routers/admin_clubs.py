@@ -16,6 +16,7 @@ from ..utils import (
     format_display_date,
     generate_member_number,
     generate_pin,
+    online_member_counts,
     parse_display_date,
 )
 from .. import audit
@@ -26,8 +27,10 @@ router = APIRouter(
 )
 
 
-def _to_out(club: models.Club) -> schemas.ClubOut:
+def _to_out(club: models.Club, online_count: int = 0) -> schemas.ClubOut:
     return schemas.ClubOut(
+        is_online=online_count > 0,
+        online_member_count=online_count,
         id=club.id,
         name=club.name,
         district=club.district,
@@ -64,7 +67,9 @@ def _get_or_404(db: Session, club_id: int) -> models.Club:
 @router.get("", response_model=list[schemas.ClubOut])
 def list_clubs(db: Session = Depends(get_db)):
     clubs = db.query(models.Club).order_by(models.Club.created_at.desc()).all()
-    return [_to_out(c) for c in clubs]
+    # One grouped query for the whole list rather than one per club.
+    counts = online_member_counts(db, [c.id for c in clubs])
+    return [_to_out(c, counts.get(c.id, 0)) for c in clubs]
 
 
 @router.post("", response_model=schemas.ClubCreateResponse)
@@ -184,7 +189,9 @@ def set_all_clubs_sms_enabled(payload: schemas.ClubSmsUpdate, db: Session = Depe
     db.query(models.Club).update({"sms_enabled": payload.sms_enabled})
     db.commit()
     clubs = db.query(models.Club).order_by(models.Club.created_at.desc()).all()
-    return [_to_out(c) for c in clubs]
+    # One grouped query for the whole list rather than one per club.
+    counts = online_member_counts(db, [c.id for c in clubs])
+    return [_to_out(c, counts.get(c.id, 0)) for c in clubs]
 
 
 @router.patch("/{club_id}/sms", response_model=schemas.ClubOut)

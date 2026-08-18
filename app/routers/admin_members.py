@@ -8,7 +8,7 @@ from ..database import get_db
 from ..security import get_current_admin
 from ..sms import APP_DOWNLOAD_LINE, normalize_ugandan_phone, send_sms
 from ..storage import delete_gallery_image, delete_gallery_photo
-from ..utils import generate_member_number, generate_pin
+from ..utils import generate_member_number, generate_pin, is_online
 
 router = APIRouter(
     prefix="/admin/members", tags=["admin"], dependencies=[Depends(get_current_admin)]
@@ -22,6 +22,8 @@ def _to_out(member: models.Member) -> schemas.AdminMemberOut:
         phone=member.phone,
         club=member.club.name,
         status=member.status,
+        is_online=is_online(member.last_seen_at),
+        last_seen_at=member.last_seen_at,
     )
 
 
