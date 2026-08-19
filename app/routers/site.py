@@ -17,6 +17,7 @@ from ..database import get_db
 from ..rate_limit import rate_limit_ok
 from ..security import get_current_admin
 from ..sms import normalize_ugandan_phone
+from ..storage import shrink_to_data_url
 
 # Generous next to the login limiter — a club officer legitimately filling
 # this in once is the norm, and the cost of a false 429 is a lost lead.
@@ -27,6 +28,10 @@ _JOIN_WINDOW_SECONDS = 3600
 # camera original or someone probing the endpoint. Rejected rather than
 # silently truncated so the submitter can be told to use a smaller file.
 _MAX_LOGO_CHARS = 800_000
+
+# Photos are shrunk by the dashboard before sending and again server-side,
+# so this only rejects an absurd payload before any decoding happens.
+_MAX_PHOTO_CHARS = 6_000_000
 
 _STATUSES = ("new", "contacted", "approved", "declined")
 
@@ -269,6 +274,7 @@ def list_projects(db: Session = Depends(get_db)):
 @content_admin_router.post("/projects", response_model=schemas.SiteProjectOut, status_code=201)
 def create_project(payload: schemas.SiteProjectIn, db: Session = Depends(get_db)):
     row = models.SiteProject(**_clean_project(payload))
+    _apply_photo(row, payload)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -282,6 +288,7 @@ def update_project(
     row = _fetch_or_404(db, models.SiteProject, project_id, "Project")
     for field, value in _clean_project(payload).items():
         setattr(row, field, value)
+    _apply_photo(row, payload)
     db.commit()
     db.refresh(row)
     return row
@@ -289,6 +296,8 @@ def update_project(
 
 @content_admin_router.delete("/projects/{project_id}")
 def delete_project(project_id: int, db: Session = Depends(get_db)):
+    # No R2 cleanup needed, unlike delete_club/delete_member: the image
+    # lives in the row, so it goes with it.
     db.delete(_fetch_or_404(db, models.SiteProject, project_id, "Project"))
     db.commit()
     return {"deleted": True}
@@ -296,7 +305,43 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 
 def _clean_project(payload: schemas.SiteProjectIn) -> dict:
     """The site draws a progress bar from this — a percentage outside 0-100
-    would render as an overflowing or negative-width bar."""
+    would render as an overflowing or negative-width bar. `photo` is
+    dropped here and handled separately by _apply_photo, which needs the
+    existing row to know what to replace."""
     data = payload.model_dump()
     data["progress_percent"] = max(0, min(data["progress_percent"], 100))
+    data.pop("photo", None)
     return data
+
+
+def _apply_photo(row: models.SiteProject, payload: schemas.SiteProjectIn) -> None:
+    """Resolve the three states of the submitted `photo` field.
+
+    Omitted means "leave it alone", which is why this reads
+    model_fields_set rather than the value: the stored photo is itself a
+    data URL now, so an unchanged photo echoed back is indistinguishable
+    from a new upload by shape alone — and re-shrinking it on every save
+    would recompress the image a little worse each time.
+
+    Replacing or clearing needs no cleanup step: the bytes live in this
+    column, so overwriting it is the deletion.
+    """
+    if "photo" not in payload.model_fields_set:
+        return
+
+    submitted = payload.photo
+    if submitted is None:
+        row.photo = None
+        return
+    if submitted == row.photo:
+        return
+    if len(submitted) > _MAX_PHOTO_CHARS:
+        raise HTTPException(
+            status_code=422, detail="Photo is too large — use one under 4MB"
+        )
+    try:
+        row.photo = shrink_to_data_url(submitted)
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="That file is not a readable image"
+        ) from None

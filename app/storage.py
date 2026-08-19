@@ -111,6 +111,20 @@ def _shrink_original(raw: bytes, content_type: str, ext: str) -> tuple[bytes, st
         raise ValueError("File is not a valid image") from None
 
 
+def shrink_to_data_url(data_url: str) -> str:
+    """Decode, downscale and re-encode an image, returning it as a data URL
+    instead of uploading it. For the small curated set of website images
+    that live in Postgres rather than R2 — the shrink step is what keeps a
+    phone-camera original from becoming a multi-megabyte row. Raises
+    ValueError if the bytes are not a real raster image, same as the
+    upload path: that check is what stops an SVG with a <script> in it
+    being stored and later served back.
+    """
+    raw, content_type, ext = _decode_data_url(data_url)
+    raw, content_type, _ = _shrink_original(raw, content_type, ext)
+    return f"data:{content_type};base64,{base64.b64encode(raw).decode()}"
+
+
 def upload_gallery_image(
     data_url: str, club_id: int, prefix: str = "gallery"
 ) -> tuple[str, str, int]:

@@ -948,9 +948,22 @@ class SiteProjectIn(BaseModel):
     deadline: date | None = None
     photo_caption: str = ""
     published: bool = True
+    # Three meanings, distinguished by the router: a "data:image/..." URL
+    # is a new upload, an existing https URL means "leave the photo alone",
+    # and null means "remove it".
+    photo: str | None = None
 
 
-class SiteProjectOut(SiteProjectIn):
+class SiteProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    title: str
+    tag: str
+    area: str
+    body: str
+    progress_percent: int
+    deadline: date | None
+    photo_caption: str
+    published: bool
+    photo: str | None

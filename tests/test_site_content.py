@@ -171,3 +171,123 @@ def test_site_content_is_not_editable_without_an_admin_token(client, path):
 def test_public_content_is_readable_anonymously(client, path):
     """The website calls these with no credentials at all."""
     assert client.get(path).status_code == 200
+
+
+# --- Project photos -------------------------------------------------------
+
+# A real 2x2 PNG: the upload path decodes and re-encodes it, so a
+# hand-waved placeholder string would fail in base64 rather than in the
+# behaviour under test.
+_PIXEL_PNG = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGM8IRfFwMDAxMDAwMDAAAAPmAFE4knAJgAAAABJRU5ErkJggg=="
+)
+
+
+def test_an_unchanged_photo_is_not_recompressed_on_every_save(client, db, cleanup):
+    """The stored photo is itself a data URL, so an echoed-back value looks
+    exactly like a fresh upload. Re-shrinking it on each save would degrade
+    the image a little more every time the admin fixed a typo."""
+    created = client.post(
+        "/admin/site/projects",
+        json={"title": "Photo project", "photo": _PIXEL_PNG},
+        headers=_admin_auth(db),
+    ).json()
+    cleanup.append((models.SiteProject, created["id"]))
+    stored = created["photo"]
+    assert stored is not None and stored.startswith("data:")
+
+    echoed = client.put(
+        f"/admin/site/projects/{created['id']}",
+        json={"title": "Renamed project", "photo": stored},
+        headers=_admin_auth(db),
+    ).json()
+    assert echoed["photo"] == stored, "unchanged photo should be byte-identical"
+    assert echoed["title"] == "Renamed project"
+
+
+def test_omitting_photo_leaves_the_existing_one_alone(client, db, cleanup):
+    """Editing a project without touching its photo must not wipe it —
+    the dashboard omits the field when the admin didn't pick a new file."""
+    created = client.post(
+        "/admin/site/projects",
+        json={"title": "Keeps its photo", "photo": _PIXEL_PNG},
+        headers=_admin_auth(db),
+    ).json()
+    cleanup.append((models.SiteProject, created["id"]))
+
+    edited = client.put(
+        f"/admin/site/projects/{created['id']}",
+        json={"title": "Still keeps its photo"},
+        headers=_admin_auth(db),
+    ).json()
+    assert edited["photo"] == created["photo"]
+
+
+def test_an_explicit_null_removes_the_photo(client, db, cleanup):
+    """Distinct from omitting it: null is the Remove button."""
+    created = client.post(
+        "/admin/site/projects",
+        json={"title": "Loses its photo", "photo": _PIXEL_PNG},
+        headers=_admin_auth(db),
+    ).json()
+    cleanup.append((models.SiteProject, created["id"]))
+
+    cleared = client.put(
+        f"/admin/site/projects/{created['id']}",
+        json={"title": "Loses its photo", "photo": None},
+        headers=_admin_auth(db),
+    ).json()
+    assert cleared["photo"] is None
+
+
+def test_the_stored_photo_is_shrunk_not_kept_at_full_size(client, db, cleanup):
+    """These bytes live in Postgres, so an unshrunk phone-camera original
+    would be a multi-megabyte row on every project."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (2400, 1800), (23, 69, 143)).save(buf, "JPEG", quality=95)
+    original = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    created = client.post(
+        "/admin/site/projects",
+        json={"title": "Big photo project", "photo": original},
+        headers=_admin_auth(db),
+    ).json()
+    cleanup.append((models.SiteProject, created["id"]))
+    assert len(created["photo"]) < len(original) / 2
+
+
+def test_a_non_image_payload_is_rejected(client, db):
+    """The stored data URL is served straight back to browsers, so bytes
+    that are not a real raster image (an SVG carrying a script, say) must
+    never make it into the column."""
+    res = client.post(
+        "/admin/site/projects",
+        json={
+            "title": "Not an image",
+            "photo": "data:image/svg+xml;base64,"
+            + "PHN2Zz48c2NyaXB0PmFsZXJ0KDEpPC9zY3JpcHQ+PC9zdmc+",
+        },
+        headers=_admin_auth(db),
+    )
+    assert res.status_code == 422, res.text
+
+
+def test_a_project_without_a_photo_still_serves(client, db, cleanup):
+    """The site falls back to its placeholder, so a photo must stay
+    optional — requiring one would block publishing."""
+    created = client.post(
+        "/admin/site/projects",
+        json={"title": "Photoless project", "photo_caption": "coming soon"},
+        headers=_admin_auth(db),
+    ).json()
+    cleanup.append((models.SiteProject, created["id"]))
+    assert created["photo"] is None
+
+    served = [p for p in client.get("/site/projects").json() if p["id"] == created["id"]]
+    assert served and served[0]["photo"] is None

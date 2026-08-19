@@ -839,6 +839,16 @@ class SiteProject(Base):
     # complete" wording is the site's, not the admin's, to keep it uniform.
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)
     deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Card image, held as a shrunk "data:image/webp;base64,..." URL rather
+    # than on R2. The quota argument in storage.py is about the club photo
+    # gallery, which grows without bound; this is a handful of curated
+    # marketing cards, and keeping the bytes in the row means replacing an
+    # image *is* deleting it — an orphaned object is not possible.
+    # Null falls back to the striped placeholder the site shipped with, so
+    # a project without a photo still renders as a card rather than a gap.
+    photo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Shown over the image (or the placeholder) — kept even when a real
+    # photo exists, since it doubles as the alt text.
     photo_caption: Mapped[str] = mapped_column(String(120), default="")
     published: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
