@@ -731,3 +731,116 @@ class EventRsvp(Base):
     )
 
     event: Mapped["Event"] = relationship()
+
+
+class JoinRequest(Base):
+    """A club's "request to join" submission from the public marketing site.
+
+    Deliberately not a Club row: this is an unverified stranger's form, and
+    creating clubs straight from it would let anyone on the internet add
+    rows the admin dashboard bills against. The system admin reads these,
+    then onboards the club through the existing new-club wizard.
+
+    Field names mirror `Club`/`Member` where they carry the same thing, so
+    an approved request maps across without translation.
+    """
+
+    __tablename__ = "join_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    club_name: Mapped[str] = mapped_column(String(160))
+    # "rotary" | "rotaract", normalized on the way in to match
+    # Club.club_type so it can be copied over as-is at onboarding.
+    club_type: Mapped[str] = mapped_column(String(20), default="rotary")
+    district: Mapped[str] = mapped_column(String(20), default="")
+    location: Mapped[str] = mapped_column(String(160), default="")
+    charter_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    members_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Data URL, same shape the admin dashboard's new-club wizard produces —
+    # kept unconverted so onboarding can hand it straight to club creation,
+    # which does the R2 upload. Capped by the API, not the column.
+    logo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contact_name: Mapped[str] = mapped_column(String(120))
+    contact_role: Mapped[str] = mapped_column(String(80), default="")
+    phone: Mapped[str] = mapped_column(String(20))
+    email: Mapped[str] = mapped_column(String(160), default="")
+    # Free text like Member.dob, which is what it becomes at onboarding.
+    dob: Mapped[str] = mapped_column(String(20), default="")
+    heard_about: Mapped[str] = mapped_column(String(80), default="")
+    # The form's multi-select, comma-joined. Only ever read back as a whole
+    # for display, so a join table would buy nothing.
+    problems: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    # new | contacted | approved | declined — the admin's own triage state.
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SiteEvent(Base):
+    """An event shown on the public marketing site's Events section.
+
+    Distinct from `Event`, which belongs to a club and drives QR check-in,
+    reminders and RSVPs. Nothing here touches a club or notifies anyone —
+    it is website copy the system admin edits, and the only reader is the
+    site itself.
+    """
+
+    __tablename__ = "site_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # The site renders the month/day chip from this rather than storing
+    # "Aug"/"26" separately, so an event can't drift out of date order.
+    event_date: Mapped[date] = mapped_column(Date, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    meta: Mapped[str] = mapped_column(String(240), default="")
+    # Free-text badge ("Weekly", "Service", "Fundraiser") — a label, not a
+    # controlled vocabulary, so the admin can invent one without a deploy.
+    kind: Mapped[str] = mapped_column(String(40), default="")
+    # Lets the admin stage content and reveal it later; the public endpoint
+    # filters on it, the admin list does not.
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SiteNews(Base):
+    """A news item on the public marketing site."""
+
+    __tablename__ = "site_news"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    published_on: Mapped[date] = mapped_column(Date, index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, default="")
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SiteProject(Base):
+    """A showcase project on the public marketing site.
+
+    Unrelated to `Project`, which is a real club's tracked work. This is
+    marketing copy — no club, no owner, no updates feed.
+    """
+
+    __tablename__ = "site_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tag: Mapped[str] = mapped_column(String(8), default="")
+    area: Mapped[str] = mapped_column(String(80), default="")
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, default="")
+    # Stored as a number so the site can draw a progress bar; the "60%
+    # complete" wording is the site's, not the admin's, to keep it uniform.
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    photo_caption: Mapped[str] = mapped_column(String(120), default="")
+    published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

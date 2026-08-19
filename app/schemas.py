@@ -861,3 +861,96 @@ class MonitoringOut(BaseModel):
     slow_requests: list[SlowRequestOut]
     events_today: int
     slow_today: int
+
+
+class JoinRequestCreate(BaseModel):
+    """Public payload from the marketing site's "request to join" form.
+    Everything except the club name and a contact phone is optional so a
+    partially-filled form still reaches the admin rather than 422-ing."""
+
+    club_name: str
+    club_type: str = "rotary"
+    district: str = ""
+    location: str = ""
+    charter_date: date | None = None
+    members_count: int = 0
+    logo: str | None = None
+    contact_name: str = ""
+    contact_role: str = ""
+    phone: str
+    email: str = ""
+    dob: str = ""
+    heard_about: str = ""
+    problems: list[str] = []
+    notes: str = ""
+
+
+class JoinRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    club_name: str
+    club_type: str
+    district: str
+    location: str
+    charter_date: date | None
+    members_count: int
+    logo: str | None
+    contact_name: str
+    contact_role: str
+    phone: str
+    email: str
+    dob: str
+    heard_about: str
+    problems: str
+    notes: str
+    status: str
+    created_at: datetime
+
+
+class JoinRequestStatusUpdate(BaseModel):
+    status: str  # new | contacted | approved | declined
+
+
+class SiteEventIn(BaseModel):
+    event_date: date
+    title: str
+    meta: str = ""
+    kind: str = ""
+    published: bool = True
+
+
+class SiteEventOut(SiteEventIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class SiteNewsIn(BaseModel):
+    published_on: date
+    title: str
+    body: str = ""
+    published: bool = True
+
+
+class SiteNewsOut(SiteNewsIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class SiteProjectIn(BaseModel):
+    title: str
+    tag: str = ""
+    area: str = ""
+    body: str = ""
+    progress_percent: int = 0
+    deadline: date | None = None
+    photo_caption: str = ""
+    published: bool = True
+
+
+class SiteProjectOut(SiteProjectIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int

@@ -30,6 +30,7 @@ from .routers import (
     polls,
     push,
     secretary,
+    site,
     treasury,
 )
 from .scheduler import scheduler
@@ -75,7 +76,13 @@ app = FastAPI(
 # numbers from a visitor's own browser session.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rotary.digiflecttech.dev"],
+    allow_origins=[
+        "https://rotary.digiflecttech.dev",
+        # The public marketing site — needs the API for the "request to
+        # join" form (POST /site/join-requests). Read-only for everything
+        # else it will grow.
+        "https://rotaryconnect.digiflecttech.dev",
+    ],
     allow_origin_regex=r"http://localhost(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
@@ -191,6 +198,9 @@ app.include_router(treasury.router)
 app.include_router(polls.router)
 app.include_router(push.router)
 app.include_router(secretary.router)
+app.include_router(site.router)
+app.include_router(site.admin_router)
+app.include_router(site.content_admin_router)
 
 
 def _run_birthday_sweep_job() -> None:
