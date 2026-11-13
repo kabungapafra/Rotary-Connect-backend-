@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -178,6 +179,9 @@ class ClubCreate(BaseModel):
     president_email: str = ""
     president_phone: str = ""
     president_dob: str = ""
+    # Who that first administrator is: "president" (default) or
+    # "club_admin" — a Club Admin who then adds the President themselves.
+    first_admin_role: Literal["president", "club_admin"] = "president"
 
 
 class PresidentCredentials(BaseModel):
@@ -186,6 +190,7 @@ class PresidentCredentials(BaseModel):
     phone: str
     member_number: str
     pin: str
+    role: str = "Club President"
 
 
 class ClubCreateResponse(BaseModel):

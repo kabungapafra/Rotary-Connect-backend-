@@ -17,7 +17,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from . import models
-from .routers.club_members import PRESIDENT_ROLES
+from .routers.club_members import CLUB_ADMIN_ROLE, PRESIDENT_ROLES
 
 IPP_ROLE = "Immediate Past President"
 PE_ROLE = "President-Elect"
@@ -77,6 +77,10 @@ def _transition_club(db: Session, club: models.Club, rotary_year: int) -> None:
         if m.id == president_elect.id:
             continue
         if president is not None and m.id == president.id:
+            continue
+        # The Club Admin isn't a board seat — they keep the roster across
+        # Rotary years.
+        if m.role == CLUB_ADMIN_ROLE:
             continue
         if m.role != "Member" or m.is_board:
             m.role = "Member"

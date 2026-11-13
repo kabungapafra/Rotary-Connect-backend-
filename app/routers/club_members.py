@@ -21,6 +21,13 @@ PRESIDENT_ROLES = {"Club President", "President"}
 # the Secretary's alone.
 MANAGER_ROLES = PRESIDENT_ROLES | {"Secretary"}
 
+# A Club Admin is an alternative first administrator the system admin can
+# create instead of a President. Their power is deliberately narrow: they
+# can add and manage members (including adding the President), nothing else
+# — events, projects, votes and the Secretary workspace stay off-limits.
+CLUB_ADMIN_ROLE = "Club Admin"
+MEMBER_MANAGER_ROLES = MANAGER_ROLES | {CLUB_ADMIN_ROLE}
+
 # Executive roles allowed to generate an event's registration QR/link.
 EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
     "Sergeant-at-Arms",
@@ -38,12 +45,12 @@ HISTORY_EDITOR_ROLES = PRESIDENT_ROLES | {"Immediate Past President", "Secretary
 
 
 def _require_manager(member: models.Member) -> None:
-    """Only the Club President or Secretary can add and manage the club's
-    other administrators and members."""
-    if member.role not in MANAGER_ROLES:
+    """Only the Club President, Secretary or Club Admin can add and manage
+    the club's other administrators and members."""
+    if member.role not in MEMBER_MANAGER_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Club President or Secretary can manage members",
+            detail="Only the Club President, Secretary or Club Admin can manage members",
         )
 
 

@@ -118,8 +118,11 @@ def create_club(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # The club's first administrator: only this Club President account can
-    # add and manage the club's other administrators and members.
+    # The club's first administrator, who adds and manages the club's other
+    # members: either the Club President, or a Club Admin who will then add
+    # the President themselves.
+    is_club_admin = payload.first_admin_role == "club_admin"
+    first_role = club_members.CLUB_ADMIN_ROLE if is_club_admin else club_members.PRESIDENT_ROLE
     president_out = None
     if payload.president_name.strip() and president_phone:
         pin = generate_pin()
@@ -127,8 +130,9 @@ def create_club(
             club_id=club.id,
             member_number=generate_member_number(db),
             name=payload.president_name.strip(),
-            role="Club President",
-            is_board=True,
+            role=first_role,
+            # A Club Admin runs the roster, not the club — not a board seat.
+            is_board=not is_club_admin,
             status="active",
             email=payload.president_email.strip(),
             phone=president_phone,
@@ -143,11 +147,13 @@ def create_club(
             phone=president.phone,
             member_number=president.member_number,
             pin=pin,
+            role=first_role,
         )
+        greeting = "Club Admin" if is_club_admin else "President"
         background_tasks.add_task(
             send_sms,
             president_phone,
-            f"Welcome aboard Rotary Connect, President - {club.name}. "
+            f"Welcome aboard Rotary Connect, {greeting} - {club.name}. "
             f"Your login: Member No. {president.member_number} or your phone number, PIN {pin}. "
             + APP_DOWNLOAD_LINE,
             club_id=club.id,
