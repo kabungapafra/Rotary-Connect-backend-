@@ -42,6 +42,8 @@ def _shell(club: models.Club | None, body: str) -> str:
     brand, deep = _BRAND["rotaract" if club and club.club_type == "rotaract" else "rotary"]
     name = html.escape(club.name) if club else "Rotary Connect"
     logo = (club.logo or "") if club else ""
+    # The same logo, big and faint, under the card.
+    watermark = f'<img class="wm" src="{html.escape(logo)}" alt="" aria-hidden="true">' if logo else ""
     logo_html = (
         f'<img src="{html.escape(logo)}" alt="{name} logo">' if logo
         else f'<span class="initial">{name[:1]}</span>'
@@ -72,6 +74,8 @@ def _shell(club: models.Club | None, body: str) -> str:
   .date {{ font-size: 13px; opacity: .85; margin: 0; }}
   .card {{ position: relative; max-width: 440px; margin: -60px auto 32px; background: #fff;
           border-radius: 22px; padding: 26px 22px 24px; box-shadow: 0 14px 40px rgba(16,24,40,.12); }}
+  .wm {{ display: block; width: 86%; max-width: 420px; max-height: 160px; object-fit: contain;
+          margin: 4px auto 18px; opacity: .2; pointer-events: none; user-select: none; }}
   h1 {{ font-size: 22px; margin: 0 0 4px; }}
   .sub {{ color: #5A6A85; font-size: 14px; margin: 0 0 18px; }}
   .err {{ background: #FDECEC; color: #B3261E; font-weight: 700; font-size: 13.5px;
@@ -133,6 +137,7 @@ def _shell(club: models.Club | None, body: str) -> str:
     <p class="date">{_today_label()}</p>
   </div>
   <div class="card">{body}</div>
+  {watermark}
   <p class="foot">Powered by Rotary Connect</p>
 </body></html>"""
 
