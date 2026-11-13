@@ -12,6 +12,11 @@ router = APIRouter(prefix="/club/gallery", tags=["gallery"])
 # R2 rather than Postgres, just guarding against outright abuse.
 _MAX_IMAGE_DATA_URL_LEN = 20_000_000
 
+# Every club's gallery is capped for now, to keep R2 storage costs
+# predictable while clubs onboard. Checked before anything is uploaded, so
+# a rejected batch leaves no orphaned files in the bucket.
+MAX_PHOTOS_PER_CLUB = 200
+
 
 @router.get("", response_model=list[schemas.GalleryPhotoOut])
 def list_photos(
@@ -36,6 +41,24 @@ def upload_photos(
         raise HTTPException(status_code=422, detail="No photos given")
     if not config.R2_ENABLED:
         raise HTTPException(status_code=503, detail="Photo storage is not configured")
+    existing = (
+        db.query(models.GalleryPhoto)
+        .filter(models.GalleryPhoto.club_id == member.club_id)
+        .count()
+    )
+    room = MAX_PHOTOS_PER_CLUB - existing
+    if len(payload) > room:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Your club's gallery is limited to {MAX_PHOTOS_PER_CLUB} photos. "
+                + (
+                    f"You can add {room} more."
+                    if room > 0
+                    else "Delete some photos to make room."
+                )
+            ),
+        )
     rows = []
     for item in payload:
         album = item.album.strip()[:160] or "Club gallery"
