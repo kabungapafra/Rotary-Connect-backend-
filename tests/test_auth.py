@@ -139,3 +139,15 @@ def test_forgot_pin_is_capped_at_three_per_member(client, make_member, monkeypat
     assert client.post(
         "/auth/login", json={"identifier": member.member_number, "pin": third_pin}
     ).status_code == 200, "PIN from the 3rd reset must still be the active one"
+
+
+def test_member_can_log_in_with_the_local_phone_format(client, make_member, db):
+    """Phones are stored as 256..., but members type 07... — the way their
+    welcome SMS and every Ugandan number reads. Both must work."""
+    member = make_member(role="Club Admin", suffix="901", pin="4321")
+    member.phone = "256779900901"
+    db.commit()
+    local = "0779 900 901"
+    res = client.post("/auth/login", json={"identifier": local, "pin": "4321"})
+    assert res.status_code == 200, res.json()
+    assert res.json()["member"]["id"] == member.id

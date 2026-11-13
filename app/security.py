@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import config, models
 from .database import get_db
+from .sms import normalize_ugandan_phone
 
 logger = logging.getLogger("rotary.security")
 
@@ -43,8 +44,12 @@ def find_member_by_identifier(db: Session, identifier: str) -> models.Member | N
     norm = _normalize(identifier)
     if not norm:
         return None
+    # Phones are stored in country-code form ("256772..."), but people type
+    # them the local way ("0772 ..."), so try that form too.
+    phone = normalize_ugandan_phone(identifier) or norm
     for member in db.query(models.Member).all():
-        if _normalize(member.phone) == norm or _normalize(member.member_number) == norm:
+        member_phone = _normalize(member.phone)
+        if member_phone in (norm, phone) or _normalize(member.member_number) == norm:
             return member
     return None
 
