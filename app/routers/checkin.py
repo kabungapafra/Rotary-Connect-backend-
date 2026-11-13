@@ -197,10 +197,32 @@ def guest_check_in(
             )
     if club is None:
         raise HTTPException(status_code=404, detail="Club not found")
-    name = payload.name.strip()[:120]
+    record_guest_visit(
+        db, club, payload.name, payload.phone,
+        host_name=payload.host_name, guest_type=payload.guest_type,
+        member_club=payload.member_club,
+    )
+    return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
+
+
+def record_guest_visit(
+    db: Session,
+    club: models.Club,
+    name: str,
+    phone: str,
+    host_name: str = "",
+    guest_type: str = "",
+    member_club: str = "",
+) -> None:
+    """Log a walk-in guest at today's meeting — shared by the app's
+    /checkin/guest and the web form a phone camera opens from the club QR
+    (/visit/{club_id}), so both follow the same rules. Raises HTTPException
+    (422) on bad input or outside the check-in window; a repeat for the
+    same phone today is a no-op."""
+    name = name.strip()[:120]
     if not name:
         raise HTTPException(status_code=422, detail="Guest name is required")
-    phone = normalize_ugandan_phone(payload.phone)
+    phone = normalize_ugandan_phone(phone)
     if phone is None:
         raise HTTPException(status_code=422, detail="Enter a valid phone number")
 
@@ -217,7 +239,7 @@ def guest_check_in(
     if already:
         # Already logged (and thanked) today — idempotent no-op rather than
         # an error, so a retried request from a flaky connection is safe.
-        return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
+        return
 
     # Same door-side window a member check-in is held to (opens
     # CHECKIN_LEAD_MINUTES before the meeting, closes CHECKIN_WINDOW_MINUTES
@@ -231,14 +253,13 @@ def guest_check_in(
         club_id=club.id,
         name=name,
         phone=phone,
-        host_name=payload.host_name.strip()[:120],
-        guest_type=payload.guest_type.strip()[:40],
-        member_club=payload.member_club.strip()[:160],
+        host_name=host_name.strip()[:120],
+        guest_type=guest_type.strip()[:40],
+        member_club=member_club.strip()[:160],
         visit_date=today,
     )
     db.add(visit)
     db.commit()
-    return schemas.GuestCheckInResponse(ok=True, club_id=club.id, club_name=club.name)
 
 
 @router.get("/club/{club_id}", response_model=schemas.VisitorClubOut)

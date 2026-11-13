@@ -26,6 +26,7 @@ from .routers import (
     club_data,
     club_members,
     event_registration,
+    guest_web,
     gallery,
     polls,
     push,
@@ -194,6 +195,7 @@ app.include_router(admin_analytics.router)
 app.include_router(admin_sms.router)
 app.include_router(gallery.router)
 app.include_router(event_registration.router)
+app.include_router(guest_web.router)
 app.include_router(treasury.router)
 app.include_router(polls.router)
 app.include_router(push.router)
