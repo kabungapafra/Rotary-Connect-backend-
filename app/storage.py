@@ -12,7 +12,7 @@ import uuid
 
 import boto3
 from botocore.client import Config
-from PIL import Image, ImageOps
+from PIL import Image, ImageChops, ImageOps
 from sqlalchemy.orm import Session
 
 from . import config, models
@@ -175,11 +175,35 @@ def upload_club_document(data_url: str, club_id: int) -> tuple[str, str, int]:
     return f"{config.R2_PUBLIC_URL}/{key}", key, len(raw)
 
 
+def _trim_logo_margins(data_url: str) -> str:
+    """Crop the empty border (transparent, or plain white) off an uploaded
+    logo. Logos often arrive as a small mark centred on a big padded square,
+    and the app fits the whole image into a small header box — untrimmed,
+    the actual logo would render tiny. Bytes that don't decode are returned
+    unchanged; the upload step rejects them."""
+    try:
+        raw, _, _ = _decode_data_url(data_url)
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGBA")
+    except Exception:
+        return data_url
+    # Treat a pixel as content when it's visible AND not near-white.
+    alpha = img.getchannel("A").point(lambda a: 255 if a > 16 else 0)
+    not_white = ImageOps.invert(img.convert("L")).point(lambda v: 255 if v > 24 else 0)
+    box = ImageChops.multiply(alpha, not_white).getbbox()
+    if box is None or box == (0, 0, img.width, img.height):
+        return data_url
+    buf = io.BytesIO()
+    img.crop(box).save(buf, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
 def store_club_logo(logo: str | None, club_id: int) -> tuple[str | None, str | None]:
     """Where a club logo should live: R2 when it's a fresh data-URL upload
     and R2 is configured, returning (public_url, storage_key). Without R2
-    (local dev) the data URL is kept as-is; a non-data value (already a
-    URL, or nothing) passes through untouched."""
+    (local dev) the data URL is kept (margins trimmed); a non-data value
+    (already a URL, or nothing) passes through untouched."""
+    if logo and logo.startswith("data:"):
+        logo = _trim_logo_margins(logo)
     if not logo or not logo.startswith("data:") or _client is None:
         return logo, None
     url, key, _ = upload_gallery_image(logo, club_id, prefix="logos")
