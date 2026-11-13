@@ -22,11 +22,14 @@ PRESIDENT_ROLES = {"Club President", "President"}
 MANAGER_ROLES = PRESIDENT_ROLES | {"Secretary"}
 
 # A Club Admin is an alternative first administrator the system admin can
-# create instead of a President. Their power is deliberately narrow: they
-# can add and manage members (including adding the President), nothing else
-# — events, projects, votes and the Secretary workspace stay off-limits.
+# create instead of a President. They set the club up: members (including
+# adding the President), events (and their registration QR), projects,
+# votes and club history. Only the Secretary workspace stays off-limits.
 CLUB_ADMIN_ROLE = "Club Admin"
 MEMBER_MANAGER_ROLES = MANAGER_ROLES | {CLUB_ADMIN_ROLE}
+
+# Who can create, edit and delete events, projects and votes.
+CLUB_CONTENT_ROLES = MANAGER_ROLES | {CLUB_ADMIN_ROLE}
 
 # Executive roles allowed to generate an event's registration QR/link.
 EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
@@ -36,12 +39,17 @@ EVENT_REGISTRATION_ROLES = PRESIDENT_ROLES | {
     "Immediate Past President",
     "Treasurer",
     "Board Director",
+    CLUB_ADMIN_ROLE,
 }
 
 # Club history (milestones) is normally the Secretary's alone to edit, but
 # the President and Immediate Past President — the roles who'd know the
-# club's own history best — can too.
-HISTORY_EDITOR_ROLES = PRESIDENT_ROLES | {"Immediate Past President", "Secretary"}
+# club's own history best — can too, as can the Club Admin setting it up.
+HISTORY_EDITOR_ROLES = PRESIDENT_ROLES | {
+    "Immediate Past President",
+    "Secretary",
+    CLUB_ADMIN_ROLE,
+}
 
 
 def _require_manager(member: models.Member) -> None:

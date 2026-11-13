@@ -1,8 +1,9 @@
 """Club Admin: an alternative first administrator the system admin can create
 instead of a President, for clubs where someone other than the President
-sets the club up. Their whole job is the roster — above all, adding the
-President — so they must be able to add and manage members, but must NOT
-inherit the President's other powers (events, polls, Secretary workspace).
+sets the club up. Setting a club up means the roster (above all, adding
+the President) plus its events (and their registration QR), projects,
+votes and history, so they must be able to manage all of those. The
+Secretary workspace (minutes, documents) stays the Secretary's alone.
 They also hold no board seat, so the July leadership handover (which
 clears every board role back to Member) must leave them in place, or the
 club would lose its roster manager every year.
@@ -108,15 +109,22 @@ def test_club_admin_can_edit_a_member(client, make_member):
     assert res.json()["role"] == "Secretary"
 
 
-def test_club_admin_does_not_get_presidential_powers(client, make_member):
-    """Creating a poll is a President/Secretary power — not the Club Admin's."""
+def test_club_admin_can_create_a_poll(client, make_member):
     admin = make_member(role=CLUB_ADMIN_ROLE, suffix="805")
     res = client.post(
         "/club/polls",
         json={"type": "motion", "title": "Q?", "options": ["A", "B"]},
         headers=_auth(admin),
     )
-    assert res.status_code == 403
+    assert res.status_code == 200, res.text  # make_member teardown clears it
+
+
+def test_club_admin_can_get_an_event_registration_qr(client, make_member, make_event):
+    admin = make_member(role=CLUB_ADMIN_ROLE, suffix="814")
+    event = make_event()
+    res = client.get(f"/club/events/{event.id}/registration", headers=_auth(admin))
+    assert res.status_code == 200, res.text
+    assert res.json()["qr_image"].startswith("data:image/png")
 
 
 def test_leadership_handover_keeps_the_club_admin(make_member, db, test_club):
@@ -130,3 +138,56 @@ def test_leadership_handover_keeps_the_club_admin(make_member, db, test_club):
 
     db.refresh(admin)
     assert admin.role == CLUB_ADMIN_ROLE
+
+
+def test_club_admin_can_add_an_event(client, make_member):
+    admin = make_member(role=CLUB_ADMIN_ROLE, suffix="809")
+    res = client.post(
+        "/club/events",
+        json={"name": "Charter night", "event_date": date.today().isoformat()},
+        headers=_auth(admin),
+    )
+    assert res.status_code == 200, res.text  # test_club teardown clears events
+
+
+def test_club_admin_can_add_a_project(client, make_member, db):
+    admin = make_member(role=CLUB_ADMIN_ROLE, suffix="810")
+    res = client.post(
+        "/club/projects", json={"name": "Borehole"}, headers=_auth(admin)
+    )
+    assert res.status_code == 200, res.text
+    db.query(models.Project).filter(models.Project.id == res.json()["id"]).delete()
+    db.commit()
+
+
+def test_club_admin_can_add_club_history(client, make_member):
+    admin = make_member(role=CLUB_ADMIN_ROLE, suffix="811")
+    res = client.post(
+        "/club/secretary/milestones",
+        json={"year": "1998", "title": "Club chartered"},
+        headers=_auth(admin),
+    )
+    assert res.status_code == 200, res.text  # make_member teardown clears it
+
+
+def test_club_admin_still_cannot_use_the_secretary_workspace(client, make_member):
+    admin = make_member(role=CLUB_ADMIN_ROLE, suffix="812")
+    res = client.post(
+        "/club/secretary/minutes",
+        json={"title": "Weekly meeting", "meeting_date": date.today().isoformat()},
+        headers=_auth(admin),
+    )
+    assert res.status_code == 403
+
+
+def test_a_plain_member_still_cannot_add_events_projects_votes_or_history(
+    client, make_member
+):
+    member = make_member(role="Member", suffix="813")
+    for path, body in (
+        ("/club/events", {"name": "X", "event_date": date.today().isoformat()}),
+        ("/club/projects", {"name": "X"}),
+        ("/club/secretary/milestones", {"year": "2000", "title": "X"}),
+        ("/club/polls", {"type": "motion", "title": "X", "options": ["A", "B"]}),
+    ):
+        assert client.post(path, json=body, headers=_auth(member)).status_code == 403

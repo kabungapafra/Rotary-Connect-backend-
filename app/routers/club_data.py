@@ -24,7 +24,7 @@ from ..push import send_bulk_push, tokens_for_club
 from ..security import get_current_member
 from ..storage import delete_gallery_image, upload_gallery_image
 from ..utils import compute_week_streak, get_or_create_meeting, is_club_access_blocked
-from .club_members import MANAGER_ROLES
+from .club_members import CLUB_CONTENT_ROLES
 
 _REMOVE_IMAGE = "__remove__"
 
@@ -54,10 +54,10 @@ router = APIRouter(prefix="/club", tags=["club"])
 
 
 def _require_manager(member: models.Member) -> None:
-    if member.role not in MANAGER_ROLES:
+    if member.role not in CLUB_CONTENT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the Club President or Secretary can manage this",
+            detail="Only the Club President, Secretary or Club Admin can manage this",
         )
 
 

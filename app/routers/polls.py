@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..security import get_current_member
-from .club_members import MANAGER_ROLES
+from .club_members import CLUB_CONTENT_ROLES
 
 router = APIRouter(prefix="/club/polls", tags=["polls"])
 
@@ -22,10 +22,10 @@ FULL_DRAW_VIEW_ROLES = {"Family of Rotary"}
 def _require_manager(member: models.Member) -> None:
     # Deliberately not is_board: plain board members lost vote creation
     # when the Secretary gained the President's management powers.
-    if member.role not in MANAGER_ROLES:
+    if member.role not in CLUB_CONTENT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the President or Secretary can manage club votes",
+            detail="Only the President, Secretary or Club Admin can manage club votes",
         )
 
 
@@ -214,10 +214,10 @@ def close_poll(
     poll = db.get(models.Poll, poll_id)
     if poll is None or poll.club_id != member.club_id:
         raise HTTPException(status_code=404, detail="Poll not found")
-    if poll.created_by != member.id and member.role not in MANAGER_ROLES:
+    if poll.created_by != member.id and member.role not in CLUB_CONTENT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the poll's creator, President, or Secretary can close it early",
+            detail="Only the poll's creator, President, Secretary or Club Admin can close it early",
         )
     poll.status = "closed"
     db.commit()
