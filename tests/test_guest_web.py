@@ -52,7 +52,7 @@ def test_submitting_the_form_logs_the_guest(client, db, test_club, meeting_now, 
               "attendee_type": "Prospective member", "host_name": "Jane"},
     )
     assert res.status_code == 200
-    assert "checked in, Web" in res.text
+    assert "checked in!" in res.text and "Welcome, Web" in res.text
     [visit] = _visits(db, test_club)
     assert visit.phone == "256772000551"
     assert visit.guest_type == "Prospective member"
