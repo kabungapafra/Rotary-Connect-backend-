@@ -22,6 +22,7 @@ from ..rate_limit import rate_limit_ok
 from ..security import get_current_member
 from ..sms import normalize_ugandan_phone
 from .club_members import EVENT_REGISTRATION_ROLES
+from .guest_web import _shell
 
 router = APIRouter(tags=["event-registration"])
 
@@ -39,7 +40,7 @@ _COOKIE_MAX_AGE = 60 * 60 * 24 * 180  # 180 days
 
 
 def _registration_link(event_id: int) -> str:
-    return f"{config.PUBLIC_BASE_URL}/rsvp/{event_id}"
+    return f"{config.GUEST_BASE_URL}/rsvp/{event_id}"
 
 
 def _qr_data_url(link: str) -> str:
@@ -79,108 +80,85 @@ def get_event_registration(
 _ATTENDEE_TYPES = ["Member", "Prospective member", "Visiting Rotarian", "Friend & family"]
 
 
-def _page_shell(name: str, club_name: str, body: str) -> str:
-    return f"""<!doctype html>
-<html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{name} — {club_name}</title>
-<style>
-  body {{ font-family: -apple-system, Helvetica, Arial, sans-serif; background: #F5F7FB;
-         margin: 0; padding: 32px 16px; color: #1A2333; }}
-  .card {{ max-width: 420px; margin: 0 auto; background: #fff; border-radius: 16px;
-           padding: 28px 24px; box-shadow: 0 8px 20px rgba(23,69,143,.12); }}
-  .badge {{ display: inline-block; background: #17458F; color: #fff; font-size: 11px;
-            font-weight: 800; letter-spacing: .5px; padding: 6px 14px; border-radius: 999px; }}
-  h1 {{ font-size: 20px; margin: 16px 0 4px; }}
-  p.meta {{ color: #5A6A85; font-size: 13px; margin: 0 0 20px; }}
-  label {{ display: block; font-size: 11px; font-weight: 800; letter-spacing: .5px;
-           color: #8B96A8; margin: 14px 0 6px; }}
-  input {{ width: 100%; box-sizing: border-box; padding: 11px 12px; font-size: 14px;
-           border: 1.5px solid #D4DBE8; border-radius: 10px; }}
-  .type-opt {{ display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600;
-               color: #1A2333; text-transform: none; letter-spacing: normal; margin: 0 0 8px; }}
-  .type-opt input {{ width: auto; }}
-  #club-field {{ display: none; }}
-  button {{ width: 100%; margin-top: 18px; padding: 13px; font-size: 14px; font-weight: 800;
-            color: #fff; background: #17458F; border: none; border-radius: 12px; cursor: pointer; }}
-</style>
-<script>
-  function toggleClub() {{
-    var isVisiting = document.querySelector('input[name="attendee_type"]:checked').value === 'Visiting Rotarian';
-    document.getElementById('club-field').style.display = isVisiting ? 'block' : 'none';
-    document.getElementById('club-input').required = isVisiting;
-  }}
-</script>
-</head>
-<body>
-  <div class="card">
-    {body}
-  </div>
-</body></html>"""
+def _rsvp_shell(event: models.Event, club: models.Club, body: str) -> str:
+    """Same branded page as the guest check-in form (club colours + logo),
+    with the event's name and time on the card."""
+    head = f"""<h1>{html.escape(event.name)}</h1>
+    <p class="sub">{html.escape(event.meta)}</p>"""
+    return _shell(club, head + body, title=event.name, subtitle="Event registration")
 
 
 def _rsvp_page(
     event: models.Event,
     club: models.Club,
-    message: str | None = None,
+    error: str | None = None,
     prefill_name: str = "",
     prefill_phone: str = "",
+    values: dict | None = None,
 ) -> str:
-    name = html.escape(event.name)
-    meta = html.escape(event.meta)
-    club_name = html.escape(club.name)
-    banner = (
-        f'<p style="color:#1a7f37;font-weight:700;margin:0 0 16px">{html.escape(message)}</p>'
-        if message
-        else ""
-    )
+    v = {k: html.escape(x) for k, x in (values or {}).items()}
+    chosen = (values or {}).get("attendee_type", "Member")
+    banner = f'<p class="err">{html.escape(error)}</p>' if error else ""
     type_options = "".join(
-        f'<label class="type-opt"><input type="radio" name="attendee_type" value="{html.escape(t)}"'
-        f'{" checked" if t == "Member" else ""} onchange="toggleClub()"> {html.escape(t)}</label>'
+        f'<label><input type="radio" name="attendee_type" value="{html.escape(t)}"'
+        f'{" checked" if t == chosen else ""} onchange="toggleClub()"><span>{html.escape(t)}</span></label>'
         for t in _ATTENDEE_TYPES
     )
-    body = f"""<span class="badge">{club_name}</span>
-    <h1>{name}</h1>
-    <p class="meta">{meta}</p>
-    {banner}
+    body = f"""{banner}
     <form method="post">
-      <label>I AM A...</label>
-      {type_options}
-      <label>YOUR NAME</label>
-      <input name="name" required maxlength="120" value="{html.escape(prefill_name)}">
-      <label>PHONE NUMBER</label>
-      <input name="phone" required maxlength="20" placeholder="e.g. 0772 000 000" value="{html.escape(prefill_phone)}">
+      <span class="lbl">I am a…</span>
+      <div class="types">{type_options}</div>
+      <label class="lbl" for="name">Your name</label>
+      <input type="text" id="name" name="name" required maxlength="120" autocomplete="name"
+             value="{v.get('name', html.escape(prefill_name))}">
+      <label class="lbl" for="phone">Phone number</label>
+      <input type="tel" id="phone" name="phone" required maxlength="20" autocomplete="tel"
+             placeholder="0772 000 000" value="{v.get('phone', html.escape(prefill_phone))}">
       <div id="club-field">
-        <label>YOUR CLUB</label>
-        <input id="club-input" name="club_name" maxlength="160" placeholder="e.g. Rotary Club of Naalya">
+        <label class="lbl" for="club-input">Your club</label>
+        <input type="text" id="club-input" name="club_name" maxlength="160"
+               placeholder="e.g. Rotary Club of Naalya" value="{v.get('club_name', '')}">
       </div>
       <button type="submit">Register</button>
-    </form>"""
-    return _page_shell(name, club_name, body)
+    </form>
+    <script>toggleClub();</script>"""
+    return _rsvp_shell(event, club, body)
 
 
-def _already_registered_page(event: models.Event, club: models.Club, visitor_name: str) -> str:
-    name = html.escape(event.name)
-    meta = html.escape(event.meta)
-    club_name = html.escape(club.name)
-    first_name = html.escape(visitor_name.split()[0] if visitor_name.split() else visitor_name)
-    body = f"""<span class="badge">{club_name}</span>
-    <h1>{name}</h1>
-    <p class="meta">{meta}</p>
-    <p style="color:#1a7f37;font-weight:700;margin:0">You're already registered, {first_name} — see you there!</p>"""
-    return _page_shell(name, club_name, body)
+def _registered_page(event: models.Event, club: models.Club, visitor_name: str,
+                     attendee_type: str | None, celebrate: bool) -> str:
+    first_name = visitor_name.split()[0] if visitor_name.split() else visitor_name
+    colors = ["#F7A81B", "#D41367", "#17458F", "#1A9E55", "#00A2E0"]
+    confetti = "".join(
+        f'<i style="left:{(i * 37) % 100}%;background:{colors[i % len(colors)]};'
+        f'animation-delay:{(i % 7) * 0.12:.2f}s"></i>'
+        for i in range(28)
+    ) if celebrate else ""
+    heading = "You're registered!" if celebrate else "You're already registered"
+    type_row = (
+        f'<div class="row"><span class="k">As</span><span class="v">{html.escape(attendee_type)}</span></div>'
+        if attendee_type else ""
+    )
+    body = f"""<div class="confetti" aria-hidden="true">{confetti}</div>
+    <div class="done">
+      <div class="tick"><svg viewBox="0 0 52 52" fill="none"><path d="M14 27l8 8 16-17"
+        stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h1>{heading}</h1>
+      <p class="sub">See you there, {html.escape(first_name)}.</p>
+      <div class="pass">
+        <div class="row"><span class="k">Event</span><span class="v">{html.escape(event.name)}</span></div>
+        <div class="row"><span class="k">When</span><span class="v">{html.escape(event.meta)}</span></div>
+        <div class="row"><span class="k">Club</span><span class="v">{html.escape(club.name)}</span></div>
+        {type_row}
+      </div>
+    </div>"""
+    return _shell(club, body, title=event.name, subtitle="Event registration")
 
 
 def _registration_closed_page(event: models.Event, club: models.Club) -> str:
-    name = html.escape(event.name)
-    meta = html.escape(event.meta)
-    club_name = html.escape(club.name)
-    body = f"""<span class="badge">{club_name}</span>
-    <h1>{name}</h1>
-    <p class="meta">{meta}</p>
-    <p style="color:#B3261E;font-weight:700;margin:0">Registration has closed —
-    today's event is ending. See you at the next one!</p>"""
-    return _page_shell(name, club_name, body)
+    body = """<p class="err">Registration has closed — today's event is ending.
+    See you at the next one!</p>"""
+    return _rsvp_shell(event, club, body)
 
 
 @router.get("/rsvp/{event_id}", response_class=HTMLResponse)
@@ -201,7 +179,9 @@ def rsvp_form(event_id: int, request: Request, db: Session = Depends(get_db)):
             .first()
         )
         if existing is not None:
-            return HTMLResponse(_already_registered_page(event, club, existing.name))
+            return HTMLResponse(
+                _registered_page(event, club, existing.name, existing.attendee_type, celebrate=False)
+            )
     return HTMLResponse(_rsvp_page(event, club, prefill_name=known_name, prefill_phone=known_phone))
 
 
@@ -230,10 +210,11 @@ def rsvp_submit(
     clean_type = attendee_type.strip() if attendee_type.strip() in _ATTENDEE_TYPES else "Member"
     clean_club = club_name.strip()[:160] if clean_type == "Visiting Rotarian" else ""
     if not clean_name or clean_phone is None or (clean_type == "Visiting Rotarian" and not clean_club):
+        values = {"name": name, "phone": phone, "attendee_type": clean_type, "club_name": club_name}
         return HTMLResponse(
-            _rsvp_page(event, club, message=None).replace(
-                "<form", '<p style="color:#B3261E;font-weight:700">Enter a valid name, phone number, and club (if visiting).</p><form'
-            )
+            _rsvp_page(event, club, error="Enter a valid name, phone number, and club (if visiting).",
+                       values=values),
+            status_code=422,
         )
 
     # Idempotent: a repeat submit for the same event+phone (double-scan, or
@@ -255,9 +236,7 @@ def rsvp_submit(
         )
         db.commit()
 
-    response = HTMLResponse(
-        _rsvp_page(event, club, message=f"You're registered, {clean_name.split()[0]}! See you there.")
-    )
+    response = HTMLResponse(_registered_page(event, club, clean_name, clean_type, celebrate=True))
     # Remembered so scanning another event's QR (or this one again) skips
     # straight to a confirmation instead of asking for these details again.
     response.set_cookie(_COOKIE_NAME, clean_name, max_age=_COOKIE_MAX_AGE, httponly=True, samesite="lax")

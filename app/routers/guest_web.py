@@ -36,7 +36,8 @@ def _today_label() -> str:
     return f"{eat:%A}, {eat.day} {eat:%B}"
 
 
-def _shell(club: models.Club | None, body: str) -> str:
+def _shell(club: models.Club | None, body: str, title: str = "Guest check-in",
+           subtitle: str | None = None) -> str:
     """Branded page: club-coloured backdrop with the club's logo up top and
     a white card for the content. Built for a phone held at the door."""
     brand, deep = _BRAND["rotaract" if club and club.club_type == "rotaract" else "rotary"]
@@ -52,7 +53,7 @@ def _shell(club: models.Club | None, body: str) -> str:
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="{brand}">
-<title>Guest check-in · {name}</title>
+<title>{html.escape(title)} · {name}</title>
 <style>
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; min-height: 100vh; color: #1A2333;
@@ -134,7 +135,7 @@ def _shell(club: models.Club | None, body: str) -> str:
   <div class="hero">
     <div class="logo">{logo_html}</div>
     <p class="club">{name}</p>
-    <p class="date">{_today_label()}</p>
+    <p class="date">{html.escape(subtitle) if subtitle else _today_label()}</p>
   </div>
   <div class="card">{body}</div>
   {watermark}

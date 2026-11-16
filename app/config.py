@@ -50,6 +50,10 @@ SMS_BLOCKED_PREFIXES = tuple(
 # registration QR codes) rather than a domain the club doesn't control.
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://rotaryapi.digiflecttech.dev")
 
+# Public guest-facing host (club QR /visit/ form, event /rsvp/ form). Its
+# nginx site only forwards those paths, so it is a clean link to print.
+GUEST_BASE_URL = os.getenv("GUEST_BASE_URL", "https://checkin.digiflecttech.dev")
+
 # Cloudflare R2 (S3-compatible) — gallery photos live here, not as base64
 # blobs in Postgres, which would blow past the free-tier DB storage quota
 # as the gallery grows. Sending is skipped (not errored) when unconfigured,
